@@ -87,14 +87,16 @@ window.setTab = (t) => { tab = t; if (t !== 'smart') activeConversation = null; 
 
 // ── My claims ─────────────────────────────────────────────────────────────────
 
+let claimsById = {};
 async function renderClaims() {
   const res = await api('/claims/my');
   const rows = res.ok ? await res.json() : [];
+  claimsById = Object.fromEntries(rows.map((c) => [c.claimId, c]));
   const list = rows.length === 0
     ? `<div class="empty"><span class="big">🗂️</span>No claims yet.<br>
        <span class="muted">Start with <b>New claim</b> — or let the AI agent file it from a sentence.</span></div>`
     : rows.map((c) => `
-      <div class="card">
+      <div class="card" style="cursor:pointer" onclick="openClaimDetail('${esc(c.claimId)}')">
         <div class="row">
           <h3>${esc(c.claimId)}</h3>
           <span class="status ${esc(c.status)}">${esc(c.status.replace(/_/g, ' '))}</span>
@@ -106,7 +108,7 @@ async function renderClaims() {
         ${c.note ? `<div class="muted" style="margin-top:.25rem">${esc(c.note)}</div>` : ''}
         ${c.billUrl ? `<div class="muted">bill: <a href="${esc(c.billUrl)}">${esc(c.billUrl.split('/').pop())}</a></div>` : ''}
         ${c.status === 'BILL_REQUESTED' ? `
-          <div class="row" style="margin-top:.6rem">
+          <div class="row" style="margin-top:.6rem" onclick="event.stopPropagation()">
             <input type="file" id="bill-${esc(c.claimId)}" style="width:auto">
             <button class="primary" onclick="uploadBill('${esc(c.claimId)}', '${esc(c.workflowId)}')">Upload &amp; attach bill</button>
           </div>` : ''}
@@ -120,6 +122,53 @@ async function renderClaims() {
     </div>
     ${list}`);
 }
+
+const OPEN_STATUSES = ['SUBMITTED', 'BILL_REQUESTED', 'BILL_ATTACHED'];
+
+window.openClaimDetail = (claimId) => {
+  const c = claimsById[claimId];
+  if (!c) return;
+  const open = OPEN_STATUSES.includes(c.status);
+  modal.hidden = false;
+  modal.innerHTML = `
+    <div class="box">
+      <div class="row">
+        <h3>${esc(c.claimId)}</h3>
+        <span class="status ${esc(c.status)}">${esc(c.status.replace(/_/g, ' '))}</span>
+        ${c.workflowId === 'agent' ? '<span class="ai-badge">🤖 AI filed</span>' : ''}
+      </div>
+      <label>Amount</label><div>$${esc(c.amount)}</div>
+      ${c.note ? `<label>${c.status === 'PAID' ? 'Payment reference' : 'Note'}</label><div>${esc(c.note)}</div>` : ''}
+      <label>Bill</label>
+      <div>${c.billUrl ? `<a href="${esc(c.billUrl)}">${esc(c.billUrl.split('/').pop())}</a>` : '<span class="muted">none attached yet</span>'}</div>
+      ${open ? `
+        <label>${c.billUrl ? 'Replace the bill' : 'Add a bill'} <span style="font-weight:400">(goes to the reviewer with the claim)</span></label>
+        <div class="row">
+          <input type="file" id="d-bill" style="width:auto;flex:1">
+          <button class="primary" onclick="detailAttachBill('${esc(c.claimId)}', '${esc(c.workflowId)}')">Attach</button>
+        </div>` : ''}
+      <label>Last update</label><div class="muted">${esc((c.updatedAt || '').slice(0, 19).replace('T', ' '))}</div>
+      <div class="row" style="margin-top:1rem; justify-content:flex-end">
+        <button class="quiet" onclick="closeModal()">Close</button>
+      </div>
+    </div>`;
+};
+
+window.detailAttachBill = async (claimId, workflowId) => {
+  const file = document.getElementById('d-bill').files[0];
+  if (!file) return alert('Pick a file first');
+  const up = await fetch(`/api/bills/?filename=${encodeURIComponent(file.name)}&owner=${encodeURIComponent(me())}&claimId=${encodeURIComponent(claimId)}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/octet-stream' },
+    body: file,
+  });
+  if (!up.ok) return alert('Upload failed: ' + (await up.text()));
+  const { billId } = await up.json();
+  const at = await api(`/bills/${billId}/attach`, { method: 'POST', body: JSON.stringify({ workflowId, claimId }) });
+  if (!at.ok) return alert('Attach failed: ' + (await at.text()));
+  window.closeModal();
+  refresh();
+};
 
 window.openClaimModal = () => {
   modal.hidden = false;
@@ -222,6 +271,7 @@ async function renderSmart() {
 }
 
 window.openConversation = (id) => { activeConversation = id; refresh(); };
+window.backToAiList = () => { activeConversation = null; refresh(); };
 
 async function renderConversation(id) {
   const res = await api(`/agent/conversations/${id}`);
@@ -236,7 +286,7 @@ async function renderConversation(id) {
       </div>`).join('');
   shell(`
     <div class="toolbar">
-      <button class="quiet" onclick="setTab('smart')">← All AI claims</button>
+      <button class="quiet" onclick="backToAiList()">← All AI claims</button>
       <span class="ai-badge">🤖 ${esc(id.slice(0, 13))}…</span>
     </div>
     <div class="card">
@@ -246,6 +296,19 @@ async function renderConversation(id) {
         <button class="ai" onclick="sendChat()">Send</button>
       </div>
     </div>`);
+  // The agent's concluding words never belong to a turn — read the run state and show
+  // them as the closing bubble.
+  const st = await api(`/agent/conversations/${id}/state`);
+  if (st.ok) {
+    const state = await st.json();
+    if (state.final && !turns.some((t) => t.text === state.final)) {
+      document.getElementById('chatlog').insertAdjacentHTML('beforeend',
+        `<div class="bubble-row"><div class="bubble agent">${esc(state.final)}</div></div>`);
+    } else if (state.failed) {
+      document.getElementById('chatlog').insertAdjacentHTML('beforeend',
+        `<div class="bubble-row"><div class="bubble agent pending">This conversation has ended — start a new AI claim.</div></div>`);
+    }
+  }
   const el = document.getElementById('chatlog');
   if (el) el.scrollTop = el.scrollHeight;
   turns.filter((t) => t.pending && t.token).forEach((t) => pollReply(id, t.token));
@@ -276,7 +339,7 @@ async function pollReply(id, turn) {
       let res;
       try { res = await api(`/agent/conversations/${id}/replies/${turn}`); }
       catch { await new Promise((r) => setTimeout(r, 2000)); continue; }
-      if (res.status === 200) {
+      if (res.status === 200 || res.status === 410) {
         if (tab === 'smart' && activeConversation === id) await renderConversation(id);
         return;
       }

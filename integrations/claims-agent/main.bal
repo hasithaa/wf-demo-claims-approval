@@ -205,7 +205,10 @@ final workflow:DurableAgent claimAgent = check new ({
 File the claim with fileClaim as soon as you know the amount, estimate the payout, and
 confirm with the user before calling executePayment — which requires an accountant's
 approval and may take a while. Be brief and concrete. The user's messages arrive on the
-chat channel; answer every turn.`
+chat channel; answer every turn. IMPORTANT: act first, then answer — call the tools you
+need BEFORE replying, and reply only with what actually happened. Never answer with
+"just a moment" or "filing now": a reply ends the turn, and anything you do afterwards
+reaches nobody until the user speaks again.`
     },
     model: check selectModel(),
     activities: [
@@ -348,12 +351,44 @@ service /agent on new http:Listener(8080) {
         if user is http:Unauthorized {
             return user;
         }
-        string reply = check claimAgent.waitForDataResult(id, token);
+        string|error reply = claimAgent.waitForDataResult(id, token);
+        http:Response res = new;
+        if reply is error {
+            // The run ended without answering this turn — failed, terminated, or
+            // concluded. Close the turn out so the portal stops waiting on it.
+            string reason = "The agent run has ended; start a new AI claim.";
+            _ = check db->execute(`UPDATE agent_turns SET text = ${reason}, pending = FALSE
+                WHERE conversation_id = ${id} AND token = ${token}`);
+            _ = check db->execute(`UPDATE agent_conversations SET status = 'CLOSED'
+                WHERE conversation_id = ${id}`);
+            log:printWarn("agent turn unanswered", 'error = reply);
+            res.statusCode = 410;
+            res.setJsonPayload({ended: true, message: reason});
+            return res;
+        }
         _ = check db->execute(`UPDATE agent_turns SET text = ${reply}, pending = FALSE
             WHERE conversation_id = ${id} AND token = ${token}`);
-        http:Response res = new;
         res.setJsonPayload({reply: reply});
         return res;
+    }
+
+    # The run's own state: still running, or finished with its final answer — the words
+    # an agent produces as it concludes never belong to a turn, so the portal reads them
+    # here and closes the conversation visually.
+    resource function get conversations/[string id]/state(@http:Header string? authorization)
+            returns json|http:Unauthorized {
+        string|http:Unauthorized user = authenticate(authorization);
+        if user is http:Unauthorized {
+            return user;
+        }
+        string|error outcome = claimAgent.getResult(id);
+        if outcome is workflow:AgentBusyError {
+            return {running: true};
+        }
+        if outcome is error {
+            return {running: false, failed: true};
+        }
+        return {running: false, "final": outcome};
     }
 
     isolated function owns(string conversationId, string user) returns boolean|error {

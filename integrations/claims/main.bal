@@ -309,6 +309,10 @@ service /claims on new http:Listener(8080) {
     # through code in the owning integration, not through the ICP.
     resource function post [string workflowId]/bills(BillAttachment bill) returns json|error {
         check workflow:sendData(claimApproval, workflowId, "billUploaded", bill.toJson());
+        // The durable record carries the bill immediately, whatever stage the workflow
+        // is at — the event stays buffered until the flow asks for it.
+        _ = check db->execute(`UPDATE claims SET bill_url = ${bill.url}, updated_at = now()
+            WHERE workflow_id = ${workflowId}`);
         log:printInfo(string `bill attached to ${workflowId}: ${bill.url}`);
         return {attached: true, workflowId: workflowId};
     }

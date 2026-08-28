@@ -51,6 +51,7 @@ SELECT r.role_id, p.permission_id
                                       'workflow_mgt:view_workflows',
                                       'project_mgt:view', 'integration_mgt:view']
             WHEN 'ACCOUNTANT' THEN ARRAY['workflow_mgt:view_human_tasks', 'workflow_mgt:manage_human_tasks',
+                                         'workflow_mgt:view_workflows',
                                          'project_mgt:view', 'integration_mgt:view']
         END)
  WHERE r.role_name IN ('MANAGER', 'ACCOUNTANT')
