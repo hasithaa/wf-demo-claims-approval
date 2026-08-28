@@ -45,6 +45,9 @@ are gated on those role names.
 
 ## The demo, as intended
 
+The full click-by-click script — both acts, the operations view, and troubleshooting —
+lives in [demo-usecase.md](demo-usecase.md).
+
 Three browser sessions on http://localhost:9090:
 
 1. **alice** signs in, submits a claim (no bill) — the bell confirms it.

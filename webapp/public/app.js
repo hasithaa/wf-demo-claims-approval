@@ -65,10 +65,12 @@ const api = (path, init = {}) => fetch(`/api${path}`, {
   headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/json', ...(init.headers || {}) },
 });
 
-// ── Views ─────────────────────────────────────────────────────────────────────
+// ── Shell ─────────────────────────────────────────────────────────────────────
 
 const app = document.getElementById('app');
+const modal = document.getElementById('modal');
 let tab = 'claims';
+let activeConversation = null;
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 function shell(content) {
@@ -76,56 +78,92 @@ function shell(content) {
   app.innerHTML = `
     <div class="tabs">
       <button class="${tab === 'claims' ? 'active' : ''}" onclick="setTab('claims')">My claims</button>
-      <button class="${tab === 'smart' ? 'active' : ''}" onclick="setTab('smart')">Smart claim</button>
+      <button class="${tab === 'smart' ? 'active' : ''}" onclick="setTab('smart')">AI claims</button>
       ${decider ? `<button class="${tab === 'tasks' ? 'active' : ''}" onclick="setTab('tasks')">Decisions</button>` : ''}
     </div>${content}`;
 }
 
-window.setTab = (t) => { tab = t; refresh(); };
+window.setTab = (t) => { tab = t; if (t !== 'smart') activeConversation = null; refresh(); };
+
+// ── My claims ─────────────────────────────────────────────────────────────────
 
 async function renderClaims() {
   const res = await api('/claims/my');
   const rows = res.ok ? await res.json() : [];
   const list = rows.length === 0
-    ? '<div class="empty">No claims yet — submit your first one above.</div>'
+    ? `<div class="empty"><span class="big">🗂️</span>No claims yet.<br>
+       <span class="muted">Start with <b>New claim</b> — or let the AI agent file it from a sentence.</span></div>`
     : rows.map((c) => `
       <div class="card">
         <div class="row">
-          <h3 style="margin:0">${esc(c.claimId)}</h3>
+          <h3>${esc(c.claimId)}</h3>
           <span class="status ${esc(c.status)}">${esc(c.status.replace(/_/g, ' '))}</span>
+          ${c.workflowId === 'agent' ? '<span class="ai-badge">🤖 AI filed</span>' : ''}
           <span class="muted">$${esc(c.amount)}</span>
           <div class="spacer" style="flex:1"></div>
           <span class="muted">${esc((c.updatedAt || '').slice(0, 16).replace('T', ' '))}</span>
         </div>
+        ${c.note ? `<div class="muted" style="margin-top:.25rem">${esc(c.note)}</div>` : ''}
         ${c.billUrl ? `<div class="muted">bill: <a href="${esc(c.billUrl)}">${esc(c.billUrl.split('/').pop())}</a></div>` : ''}
-        ${c.note ? `<div class="muted">${esc(c.note)}</div>` : ''}
         ${c.status === 'BILL_REQUESTED' ? `
-          <div class="row" style="margin-top:.5rem">
-            <input type="file" id="bill-${esc(c.claimId)}">
+          <div class="row" style="margin-top:.6rem">
+            <input type="file" id="bill-${esc(c.claimId)}" style="width:auto">
             <button class="primary" onclick="uploadBill('${esc(c.claimId)}', '${esc(c.workflowId)}')">Upload &amp; attach bill</button>
           </div>` : ''}
       </div>`).join('');
   shell(`
-    <div class="card">
-      <h3>Submit a claim</h3>
-      <div class="row">
-        <input type="number" id="amount" placeholder="Amount" style="width:9rem">
-        <input type="text" id="desc" placeholder="What happened?" style="flex:1;min-width:14rem">
-        <button class="primary" onclick="submitClaim()">Submit</button>
-      </div>
-      <div class="muted" style="margin-top:.4rem">A manager reviews every claim; you'll hear back here and in the bell.</div>
+    <div class="toolbar">
+      <h2>My claims</h2>
+      <div class="spacer" style="flex:1"></div>
+      <button class="primary" onclick="openClaimModal()">＋ New claim</button>
+      <button class="ai" onclick="startAiClaim()">🤖 Submit with AI agent</button>
     </div>
     ${list}`);
 }
 
+window.openClaimModal = () => {
+  modal.hidden = false;
+  modal.innerHTML = `
+    <div class="box">
+      <h3>New claim</h3>
+      <div class="muted">A manager reviews every claim; you'll hear back in the bell.</div>
+      <label for="m-amount">Amount (USD)</label>
+      <input type="number" id="m-amount" placeholder="e.g. 1200" min="1">
+      <label for="m-desc">What happened?</label>
+      <textarea id="m-desc" rows="3" placeholder="Where, when, and what broke or went missing"></textarea>
+      <label for="m-bill">Bill or receipt <span style="font-weight:400">(optional — you can add it later if the reviewer asks)</span></label>
+      <input type="file" id="m-bill">
+      <div class="row" style="margin-top:1.1rem; justify-content:flex-end">
+        <button class="quiet" onclick="closeModal()">Cancel</button>
+        <button class="primary" id="m-submit" onclick="submitClaim()">Submit claim</button>
+      </div>
+    </div>`;
+};
+window.closeModal = () => { modal.hidden = true; modal.innerHTML = ''; };
+modal.addEventListener('click', (e) => { if (e.target === modal) window.closeModal(); });
+
 window.submitClaim = async () => {
-  const amount = parseFloat(document.getElementById('amount').value);
-  const description = document.getElementById('desc').value;
+  const amount = parseFloat(document.getElementById('m-amount').value);
+  const description = document.getElementById('m-desc').value.trim();
+  const file = document.getElementById('m-bill').files[0];
   if (!amount || amount <= 0) return alert('An amount is required');
+  const btn = document.getElementById('m-submit');
+  btn.disabled = true; btn.textContent = 'Submitting…';
+  let billUrl;
+  if (file) {
+    const up = await fetch(`/api/bills/?filename=${encodeURIComponent(file.name)}&owner=${encodeURIComponent(me())}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/octet-stream' },
+      body: file,
+    });
+    if (!up.ok) { btn.disabled = false; btn.textContent = 'Submit claim'; return alert('Bill upload failed: ' + (await up.text())); }
+    billUrl = (await up.json()).url;
+  }
   // Trailing slash matters: nginx 301s '/api/claims' to '/api/claims/', and a
   // redirected POST arrives as a GET.
-  const res = await api('/claims/', { method: 'POST', body: JSON.stringify({ amount, description }) });
-  if (!res.ok) alert('Submit failed: ' + (await res.text()));
+  const res = await api('/claims/', { method: 'POST', body: JSON.stringify({ amount, description, billUrl }) });
+  if (!res.ok) { btn.disabled = false; btn.textContent = 'Submit claim'; return alert('Submit failed: ' + (await res.text())); }
+  window.closeModal();
   refresh();
 };
 
@@ -145,11 +183,117 @@ window.uploadBill = async (claimId, workflowId) => {
   refresh();
 };
 
+// ── AI claims: chatting with the durable agent ────────────────────────────────
+// Conversations and every turn's correlation token live in the application database,
+// so this view survives new sessions, new browsers, and restarts. A pending reply
+// usually means the payment is waiting on the accountant — the demo's point.
+
+window.startAiClaim = async () => {
+  const created = await api('/agent/conversations', { method: 'POST' });
+  if (!created.ok) return alert('Could not start the agent: ' + (await created.text()));
+  activeConversation = (await created.json()).conversationId;
+  tab = 'smart';
+  refresh();
+};
+
+async function renderSmart() {
+  if (activeConversation) return renderConversation(activeConversation);
+  const res = await api('/agent/conversations');
+  const rows = res.ok ? await res.json() : [];
+  const list = rows.length === 0
+    ? `<div class="empty"><span class="big">🤖</span>No AI claims yet.<br>
+       <span class="muted">Tell the agent what happened — it files the claim, estimates the payout, and asks the accountant to release the money.</span></div>`
+    : rows.map((c) => `
+      <div class="card" style="cursor:pointer" onclick="openConversation('${esc(c.conversationId)}')">
+        <div class="row">
+          <span class="ai-badge">🤖 conversation</span>
+          <span class="muted" style="font-family:monospace">${esc(c.conversationId.slice(0, 13))}…</span>
+          <div class="spacer" style="flex:1"></div>
+          <span class="muted">${esc((c.createdAt || '').slice(0, 16).replace('T', ' '))}</span>
+        </div>
+      </div>`).join('');
+  shell(`
+    <div class="toolbar">
+      <h2>AI claims</h2>
+      <div class="spacer" style="flex:1"></div>
+      <button class="ai" onclick="startAiClaim()">🤖 New AI claim</button>
+    </div>
+    ${list}`);
+}
+
+window.openConversation = (id) => { activeConversation = id; refresh(); };
+
+async function renderConversation(id) {
+  const res = await api(`/agent/conversations/${id}`);
+  const turns = res.ok ? await res.json() : [];
+  const log = turns.length === 0
+    ? '<div class="empty">Say what happened and roughly what it cost.</div>'
+    : turns.map((t) => `
+      <div class="bubble-row">
+        <div class="bubble ${t.who === 'me' ? 'me' : 'agent'} ${t.pending ? 'pending' : ''}">
+          ${t.pending ? '… working (a payment may be waiting on the accountant)' : esc(t.text || '')}
+        </div>
+      </div>`).join('');
+  shell(`
+    <div class="toolbar">
+      <button class="quiet" onclick="setTab('smart')">← All AI claims</button>
+      <span class="ai-badge">🤖 ${esc(id.slice(0, 13))}…</span>
+    </div>
+    <div class="card">
+      <div id="chatlog" style="max-height:24rem;overflow:auto">${log}</div>
+      <div class="row" style="margin-top:.8rem">
+        <input type="text" id="chatmsg" placeholder="e.g. Broke my laptop on a work trip, about $1200" style="flex:1;min-width:16rem" onkeydown="if(event.key==='Enter')sendChat()">
+        <button class="ai" onclick="sendChat()">Send</button>
+      </div>
+    </div>`);
+  const el = document.getElementById('chatlog');
+  if (el) el.scrollTop = el.scrollHeight;
+  turns.filter((t) => t.pending && t.token).forEach((t) => pollReply(id, t.token));
+}
+
+window.sendChat = async () => {
+  const input = document.getElementById('chatmsg');
+  const text = input.value.trim();
+  if (!text || !activeConversation) return;
+  input.value = '';
+  const sent = await api(`/agent/conversations/${activeConversation}/messages`, {
+    method: 'POST', body: JSON.stringify({ message: text }),
+  });
+  if (!sent.ok) return alert('Send failed: ' + (await sent.text()));
+  const { token: turn } = await sent.json();
+  await renderConversation(activeConversation);
+  pollReply(activeConversation, turn);
+};
+
+const polling = new Set();
+async function pollReply(id, turn) {
+  if (polling.has(turn)) return;
+  polling.add(turn);
+  // The server long-polls (waitForDataResult); the proxy cuts a poll after ~60s and we
+  // simply ask again — a long-held payment gate is successive quiet polls, not an error.
+  try {
+    for (let i = 0; i < 120; i++) {
+      let res;
+      try { res = await api(`/agent/conversations/${id}/replies/${turn}`); }
+      catch { await new Promise((r) => setTimeout(r, 2000)); continue; }
+      if (res.status === 200) {
+        if (tab === 'smart' && activeConversation === id) await renderConversation(id);
+        return;
+      }
+      await new Promise((r) => setTimeout(r, 2000));
+    }
+  } finally {
+    polling.delete(turn);
+  }
+}
+
+// ── Decisions (managers and accountants) ──────────────────────────────────────
+
 async function renderTasks() {
   const res = await api('/claims/tasks');
   const rows = res.ok ? await res.json() : [];
   const list = rows.length === 0
-    ? '<div class="empty">Nothing waiting on you.</div>'
+    ? '<div class="empty"><span class="big">✅</span>Nothing waiting on you.</div>'
     : rows.map((t) => {
       const payment = t.userRoles.includes('ACCOUNTANT');
       const p = t.payload || {};
@@ -166,15 +310,15 @@ async function renderTasks() {
       return `
       <div class="card">
         <h3>${esc(t.title)}</h3>
-        <div class="row">${facts}</div>${bill}
-        <div class="row" style="margin-top:.6rem">
+        <div class="row" style="margin-top:.3rem">${facts}</div>${bill}
+        <div class="row" style="margin-top:.7rem">
           ${buttons}
           <input type="text" id="c-${esc(t.taskId)}" placeholder="Comment (optional)" style="flex:1;min-width:10rem">
         </div>
-        <div class="muted" style="margin-top:.3rem">The full form, payload and history live in the ICP console — this is the fast lane.</div>
+        <div class="muted" style="margin-top:.35rem">The full form, payload and history live in the ICP console — this is the fast lane.</div>
       </div>`;
     }).join('');
-  shell(list);
+  shell(`<div class="toolbar"><h2>Decisions</h2></div>${list}`);
 }
 
 window.comment = (id) => document.getElementById(`c-${id}`)?.value || undefined;
@@ -186,78 +330,6 @@ window.decide = async (taskId, result) => {
   if (!res.ok) alert('Could not complete the task: ' + (await res.text()));
   refresh();
 };
-
-// ── Smart claim: chatting with the durable agent ──────────────────────────────
-// Every user turn is a sendData on the agent's chat channel; the reply for exactly
-// that turn comes back by its correlation token. A pending reply usually means the
-// payment gate is waiting on the accountant — which is the demo's point.
-
-const chat = () => JSON.parse(sessionStorage.getItem('chat') || '{"id":null,"log":[]}');
-const saveChat = (c) => sessionStorage.setItem('chat', JSON.stringify(c));
-
-function renderSmart() {
-  const c = chat();
-  const log = c.log.length === 0
-    ? '<div class="empty">Say what happened — the agent files the claim, estimates the payout, and asks the accountant to release the money.</div>'
-    : c.log.map((m) => `
-      <div class="row" style="justify-content:${m.who === 'me' ? 'flex-end' : 'flex-start'}">
-        <div class="card" style="max-width:75%;margin:.2rem 0;${m.who === 'me' ? 'background:#E7EEF5;' : ''}">
-          ${m.pending ? '<span class="muted">… working (a payment may be waiting on the accountant)</span>' : esc(m.text)}
-        </div>
-      </div>`).join('');
-  shell(`
-    <div class="card">
-      <div id="chatlog" style="max-height:24rem;overflow:auto">${log}</div>
-      <div class="row" style="margin-top:.7rem">
-        <input type="text" id="chatmsg" placeholder="e.g. Broke my laptop on a work trip, about $1200" style="flex:1;min-width:16rem">
-        <button class="primary" onclick="sendChat()">Send</button>
-        <button class="quiet" onclick="resetChat()">New conversation</button>
-      </div>
-    </div>`);
-  const el = document.getElementById('chatlog');
-  if (el) el.scrollTop = el.scrollHeight;
-}
-
-window.resetChat = () => { sessionStorage.removeItem('chat'); renderSmart(); };
-
-window.sendChat = async () => {
-  const input = document.getElementById('chatmsg');
-  const text = input.value.trim();
-  if (!text) return;
-  let c = chat();
-  if (!c.id) {
-    const created = await api('/agent/conversations', { method: 'POST' });
-    if (!created.ok) return alert('Could not start the agent: ' + (await created.text()));
-    c.id = (await created.json()).conversationId;
-  }
-  c.log.push({ who: 'me', text });
-  const sent = await api(`/agent/conversations/${c.id}/messages`, { method: 'POST', body: JSON.stringify({ message: text }) });
-  if (!sent.ok) { alert('Send failed: ' + (await sent.text())); return; }
-  const { token: turn } = await sent.json();
-  c.log.push({ who: 'agent', pending: true, turn });
-  saveChat(c); renderSmart();
-  pollReply(c.id, turn);
-};
-
-async function pollReply(id, turn) {
-  // The server long-polls (waitForDataResult); the proxy cuts a poll after ~60s and we
-  // simply ask again — a long-held payment gate is successive quiet polls, not an error.
-  for (let i = 0; i < 120; i++) {
-    let res;
-    try { res = await api(`/agent/conversations/${id}/replies/${turn}`); }
-    catch { await new Promise((r) => setTimeout(r, 2000)); continue; }
-    if (res.status === 200) {
-      const { reply } = await res.json();
-      const c = chat();
-      const slot = c.log.find((m) => m.turn === turn);
-      if (slot) { slot.pending = false; slot.text = reply; }
-      saveChat(c);
-      if (tab === 'smart') renderSmart();
-      return;
-    }
-    await new Promise((r) => setTimeout(r, 2000));
-  }
-}
 
 // ── Inbox ─────────────────────────────────────────────────────────────────────
 
@@ -290,7 +362,7 @@ bellBtn.onclick = () => { inboxPanel.hidden = !inboxPanel.hidden; };
 async function refresh() {
   if (!token()) return;
   if (tab === 'tasks' && isDecider()) await renderTasks();
-  else if (tab === 'smart') renderSmart();   // chat re-renders locally; polls own turns
+  else if (tab === 'smart') await renderSmart();
   else await renderClaims();
   await refreshInbox();
 }
@@ -306,7 +378,9 @@ async function refresh() {
     authBtn.textContent = 'Sign out';
     authBtn.onclick = signOut;
     await refresh();
-    setInterval(refresh, 10000);
+    // The chat view manages its own polling; a full refresh mid-conversation would
+    // discard what the user is typing.
+    setInterval(() => { if (tab !== 'smart') refresh(); else refreshInbox(); }, 10000);
   } else {
     authBtn.onclick = signIn;
   }

@@ -7,3 +7,7 @@ integrations/*/Dependencies.toml
 # Extracted from the bridge bala by bal during build — regenerated every build.sh run
 prebuilt/compiler-plugin/
 prebuilt/platform/
+# Local Config.toml files can carry live AI tokens — never committed; the entrypoint
+# renders the real one inside the container.
+integrations/*/Config.toml
+.local/

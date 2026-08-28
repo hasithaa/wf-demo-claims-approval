@@ -10,6 +10,7 @@ import ballerina/ai;
 import ballerina/http;
 import ballerina/jwt;
 import ballerina/log;
+import ballerina/sql;
 import ballerina/uuid;
 import ballerina/workflow;
 import ballerinax/postgresql;
@@ -25,9 +26,48 @@ configurable string notificationsUrl = "http://notifications:8080";
 configurable string idpIssuer = "https://localhost:8090";
 configurable string idpJwksUrl = "https://thunder:8090/oauth2/jwks";
 
-final postgresql:Client db = check new (host = dbHost, port = dbPort,
-    username = dbUser, password = dbPassword, database = dbName);
+final postgresql:Client db = check initDb();
 final http:Client notifications = check new (notificationsUrl);
+
+// Conversations are application data, not workflow history: the instance id and every
+// turn's correlation token live in the claims database, so a returning user resumes the
+// same chat and nothing depends on Temporal retention or a browser session.
+function initDb() returns postgresql:Client|error {
+    postgresql:Client c = check new (host = dbHost, port = dbPort,
+        username = dbUser, password = dbPassword, database = dbName);
+    _ = check c->execute(`CREATE TABLE IF NOT EXISTS agent_conversations (
+        conversation_id VARCHAR(100) PRIMARY KEY,
+        username VARCHAR(200) NOT NULL,
+        status VARCHAR(16) NOT NULL DEFAULT 'OPEN',
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
+    _ = check c->execute(`CREATE TABLE IF NOT EXISTS agent_turns (
+        id BIGSERIAL PRIMARY KEY,
+        conversation_id VARCHAR(100) NOT NULL,
+        who VARCHAR(8) NOT NULL,
+        text TEXT,
+        token VARCHAR(100),
+        pending BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
+    _ = check c->execute(`CREATE INDEX IF NOT EXISTS idx_agent_turns_conv
+        ON agent_turns (conversation_id, id)`);
+    return c;
+}
+
+type Conversation record {|
+    string conversationId;
+    string username;
+    string status;
+    string createdAt;
+|};
+
+type Turn record {|
+    int id;
+    string who;
+    string? text;
+    string? token;
+    boolean pending;
+    string createdAt;
+|};
 
 // ── Activities: the agent's hands ─────────────────────────────────────────────
 
@@ -229,9 +269,9 @@ service /agent on new http:Listener(8080) {
         }};
     }
 
-    # Opens a conversation: starts one durable agent instance for this user. The run
-    # query carries only the user's identity; every actual user turn goes through the
-    # chat channel, so every reply is token-addressed.
+    # Opens a conversation: starts one durable agent instance for this user and records
+    # it. The run query carries only the user's identity; every actual user turn goes
+    # through the chat channel, so every reply is token-addressed.
     resource function post conversations(@http:Header string? authorization)
             returns json|http:Unauthorized|error {
         string|http:Unauthorized user = authenticate(authorization);
@@ -239,10 +279,46 @@ service /agent on new http:Listener(8080) {
             return user;
         }
         string instanceId = check claimAgent.run(string `user=${user}`, input = {user: user});
+        _ = check db->execute(`INSERT INTO agent_conversations (conversation_id, username)
+            VALUES (${instanceId}, ${user}) ON CONFLICT DO NOTHING`);
         return {conversationId: instanceId};
     }
 
-    # One user turn: durably delivered, correlated by the returned token.
+    # The caller's conversations, newest first.
+    resource function get conversations(@http:Header string? authorization)
+            returns Conversation[]|http:Unauthorized|error {
+        string|http:Unauthorized user = authenticate(authorization);
+        if user is http:Unauthorized {
+            return user;
+        }
+        stream<Conversation, sql:Error?> rows = db->query(
+            `SELECT conversation_id AS "conversationId", username, status,
+                    created_at::text AS "createdAt"
+               FROM agent_conversations WHERE username = ${user}
+              ORDER BY created_at DESC LIMIT 50`);
+        return from Conversation c in rows select c;
+    }
+
+    # One conversation's transcript — the durable record of the chat, tokens included,
+    # so a fresh browser session resumes exactly where the last one stopped.
+    resource function get conversations/[string id](@http:Header string? authorization)
+            returns Turn[]|http:Unauthorized|error {
+        string|http:Unauthorized user = authenticate(authorization);
+        if user is http:Unauthorized {
+            return user;
+        }
+        boolean owned = check self.owns(id, user);
+        if !owned {
+            return <http:Unauthorized>{body: {message: "Not your conversation"}};
+        }
+        stream<Turn, sql:Error?> rows = db->query(
+            `SELECT id, who, text, token, pending, created_at::text AS "createdAt"
+               FROM agent_turns WHERE conversation_id = ${id} ORDER BY id`);
+        return from Turn t in rows select t;
+    }
+
+    # One user turn: durably delivered, correlated by the returned token, and recorded —
+    # the user's words and the pending reply slot both land in the application database.
     resource function post conversations/[string id]/messages(
             @http:Header string? authorization, NewMessage m)
             returns json|http:Unauthorized|error {
@@ -250,7 +326,15 @@ service /agent on new http:Listener(8080) {
         if user is http:Unauthorized {
             return user;
         }
+        boolean owned = check self.owns(id, user);
+        if !owned {
+            return <http:Unauthorized>{body: {message: "Not your conversation"}};
+        }
         string token = check claimAgent.sendData(id, "chat", m.message);
+        _ = check db->execute(`INSERT INTO agent_turns (conversation_id, who, text)
+            VALUES (${id}, 'me', ${m.message})`);
+        _ = check db->execute(`INSERT INTO agent_turns (conversation_id, who, token, pending)
+            VALUES (${id}, 'agent', ${token}, TRUE)`);
         return {token: token};
     }
 
@@ -265,8 +349,18 @@ service /agent on new http:Listener(8080) {
             return user;
         }
         string reply = check claimAgent.waitForDataResult(id, token);
+        _ = check db->execute(`UPDATE agent_turns SET text = ${reply}, pending = FALSE
+            WHERE conversation_id = ${id} AND token = ${token}`);
         http:Response res = new;
         res.setJsonPayload({reply: reply});
         return res;
+    }
+
+    isolated function owns(string conversationId, string user) returns boolean|error {
+        stream<record {|int c;|}, sql:Error?> rows = db->query(
+            `SELECT count(*)::int AS c FROM agent_conversations
+              WHERE conversation_id = ${conversationId} AND username = ${user}`);
+        record {|int c;|}[] found = check from var r in rows select r;
+        return found.length() > 0 && found[0].c > 0;
     }
 }

@@ -6,66 +6,91 @@
 <title>Claimflow</title>
 <style>
   :root {
-    --ground: #FBFAF7; --panel: #FFFFFF; --ink: #1C2B3A; --ink2: #5C6B7A;
-    --line: #DDD8CC; --accent: #2E5E8C; --good: #3E7A4E; --warn: #B07A2A; --bad: #A34A3C;
+    --ground: #F6F7F9; --panel: #FFFFFF; --ink: #1C2B3A; --ink2: #5C6B7A;
+    --line: #E1E4E9; --accent: #2E5E8C; --accent-soft: #E8F0F7;
+    --good: #3E7A4E; --warn: #B07A2A; --bad: #A34A3C;
+    --ai: #6B5B95; --ai-soft: #F0EDF7;
+    --shadow: 0 1px 3px rgba(28,43,58,.08), 0 6px 20px rgba(28,43,58,.06);
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--ground); color: var(--ink);
-         font: 16px/1.55 "Avenir Next", "Segoe UI", system-ui, sans-serif; }
-  header { display: flex; align-items: center; gap: 1rem; padding: .8rem 1.4rem;
-           background: var(--panel); border-bottom: 2px solid var(--line); }
-  header h1 { font-size: 1.15rem; margin: 0; letter-spacing: .02em; }
+         font: 15.5px/1.55 "Avenir Next", "Segoe UI", system-ui, sans-serif; }
+  header { display: flex; align-items: center; gap: 1rem; padding: .8rem 1.6rem;
+           background: var(--panel); border-bottom: 1px solid var(--line); box-shadow: var(--shadow); }
+  header h1 { font-size: 1.2rem; margin: 0; letter-spacing: .01em; }
   header h1 span { color: var(--accent); }
   .spacer { flex: 1; }
-  .chip { font-size: .72rem; font-weight: 600; letter-spacing: .05em; padding: .12em .6em;
-          border: 1px solid; border-radius: 3px; }
-  .chip.role { color: var(--accent); border-color: var(--accent); }
-  main { max-width: 60rem; margin: 1.5rem auto; padding: 0 1.2rem; }
-  .tabs { display: flex; gap: .4rem; margin-bottom: 1rem; }
-  .tabs button { border: 1px solid var(--line); background: var(--panel); padding: .4rem 1rem;
-                 border-radius: 5px; cursor: pointer; font: inherit; color: var(--ink2); }
-  .tabs button.active { color: var(--accent); border-color: var(--accent); font-weight: 600; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 7px;
-          padding: 1rem 1.2rem; margin-bottom: .9rem; }
-  .card h3 { margin: 0 0 .5rem; font-size: 1rem; }
+  .chip { font-size: .7rem; font-weight: 600; letter-spacing: .05em; padding: .14em .6em;
+          border: 1px solid; border-radius: 999px; }
+  .chip.role { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+  main { max-width: 62rem; margin: 1.6rem auto 4rem; padding: 0 1.2rem; }
+  .tabs { display: flex; gap: .4rem; margin-bottom: 1.1rem; }
+  .tabs button { border: 1px solid var(--line); background: var(--panel); padding: .45rem 1.1rem;
+                 border-radius: 999px; cursor: pointer; font: inherit; color: var(--ink2); }
+  .tabs button.active { color: #fff; background: var(--accent); border-color: var(--accent); font-weight: 600; }
+  .toolbar { display: flex; align-items: center; gap: .6rem; margin-bottom: 1rem; }
+  .toolbar h2 { margin: 0; font-size: 1.15rem; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+          padding: 1rem 1.2rem; margin-bottom: .8rem; box-shadow: var(--shadow); }
+  .card h3 { margin: 0; font-size: 1rem; }
   .muted { color: var(--ink2); font-size: .86rem; }
   .row { display: flex; gap: .8rem; align-items: center; flex-wrap: wrap; }
-  .status { font-size: .72rem; font-weight: 700; letter-spacing: .05em; padding: .15em .6em;
-            border-radius: 10px; border: 1px solid; }
-  .status.PAID { color: var(--good); border-color: var(--good); }
-  .status.REJECTED, .status.PAYMENT_REFUSED { color: var(--bad); border-color: var(--bad); }
-  .status.BILL_REQUESTED { color: var(--warn); border-color: var(--warn); }
-  .status.SUBMITTED, .status.BILL_ATTACHED { color: var(--accent); border-color: var(--accent); }
-  button.primary { background: var(--accent); color: #fff; border: none; padding: .45rem 1rem;
-                   border-radius: 5px; cursor: pointer; font: inherit; }
-  button.quiet { background: none; border: 1px solid var(--line); padding: .4rem .9rem;
-                 border-radius: 5px; cursor: pointer; font: inherit; color: var(--ink2); }
-  button.good { background: var(--good); color: #fff; border: none; padding: .4rem .9rem; border-radius: 5px; cursor: pointer; font: inherit; }
-  button.warn { background: var(--warn); color: #fff; border: none; padding: .4rem .9rem; border-radius: 5px; cursor: pointer; font: inherit; }
-  button.bad  { background: var(--bad);  color: #fff; border: none; padding: .4rem .9rem; border-radius: 5px; cursor: pointer; font: inherit; }
-  input, textarea { font: inherit; padding: .45rem .6rem; border: 1px solid var(--line);
-                    border-radius: 5px; background: #fff; color: var(--ink); }
+  .status { font-size: .7rem; font-weight: 700; letter-spacing: .06em; padding: .18em .7em;
+            border-radius: 999px; border: 1px solid; }
+  .status.PAID { color: var(--good); border-color: var(--good); background: #EDF5EF; }
+  .status.REJECTED, .status.PAYMENT_REFUSED { color: var(--bad); border-color: var(--bad); background: #F8EEEC; }
+  .status.BILL_REQUESTED { color: var(--warn); border-color: var(--warn); background: #F8F2E7; }
+  .status.SUBMITTED, .status.BILL_ATTACHED { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+  button.primary { background: var(--accent); color: #fff; border: none; padding: .5rem 1.1rem;
+                   border-radius: 7px; cursor: pointer; font: inherit; font-weight: 600; }
+  button.primary:hover { filter: brightness(1.08); }
+  button.ai { background: var(--ai); color: #fff; border: none; padding: .5rem 1.1rem;
+              border-radius: 7px; cursor: pointer; font: inherit; font-weight: 600; }
+  button.ai:hover { filter: brightness(1.08); }
+  button.quiet { background: var(--panel); border: 1px solid var(--line); padding: .45rem .95rem;
+                 border-radius: 7px; cursor: pointer; font: inherit; color: var(--ink2); }
+  button.good { background: var(--good); color: #fff; border: none; padding: .45rem .95rem; border-radius: 7px; cursor: pointer; font: inherit; }
+  button.warn { background: var(--warn); color: #fff; border: none; padding: .45rem .95rem; border-radius: 7px; cursor: pointer; font: inherit; }
+  button.bad  { background: var(--bad);  color: #fff; border: none; padding: .45rem .95rem; border-radius: 7px; cursor: pointer; font: inherit; }
+  input, textarea { font: inherit; padding: .5rem .65rem; border: 1px solid var(--line);
+                    border-radius: 7px; background: #fff; color: var(--ink); width: 100%; }
+  label { display: block; font-size: .8rem; font-weight: 600; color: var(--ink2); margin: .8rem 0 .25rem; }
   .bell { position: relative; cursor: pointer; border: 1px solid var(--line); background: var(--panel);
-          border-radius: 6px; padding: .35rem .6rem; font: inherit; }
+          border-radius: 8px; padding: .35rem .6rem; font: inherit; }
   .bell .n { position: absolute; top: -7px; right: -7px; background: var(--bad); color: #fff;
              font-size: .68rem; border-radius: 9px; padding: 0 .35em; font-weight: 700; }
   #inboxPanel { position: absolute; right: 1.2rem; top: 3.4rem; width: 22rem; max-height: 24rem;
                 overflow: auto; background: var(--panel); border: 1px solid var(--line);
-                border-radius: 7px; box-shadow: 0 8px 28px rgba(28,43,58,.18); padding: .5rem; z-index: 5; }
-  #inboxPanel .note { padding: .5rem .6rem; border-bottom: 1px solid var(--line); cursor: pointer; }
-  #inboxPanel .note.unread { background: #F4F0E4; }
+                border-radius: 10px; box-shadow: 0 12px 36px rgba(28,43,58,.2); padding: .5rem; z-index: 6; }
+  #inboxPanel .note { padding: .5rem .6rem; border-bottom: 1px solid var(--line); cursor: pointer; border-radius: 6px; }
+  #inboxPanel .note.unread { background: var(--accent-soft); }
   #inboxPanel .note b { display: block; font-size: .9rem; }
+  .empty { text-align: center; padding: 3rem 1rem; color: var(--ink2); }
+  .empty .big { font-size: 2.2rem; display: block; margin-bottom: .4rem; }
   .login-hero { text-align: center; margin-top: 5rem; }
-  .login-hero h2 { font-size: 1.6rem; }
-  code { background: #EFECE3; border: 1px solid var(--line); border-radius: 4px;
-         padding: .05em .3em; font-size: .85em; }
-  .empty { color: var(--ink2); text-align: center; padding: 1.4rem 0; }
+  .login-hero h2 { font-size: 1.7rem; }
+  /* Modal */
+  #modal { position: fixed; inset: 0; background: rgba(28,43,58,.45); display: flex;
+           align-items: center; justify-content: center; z-index: 10; }
+  /* The display rule above would silently defeat the hidden attribute. */
+  #modal[hidden] { display: none; }
+  #modal .box { background: var(--panel); border-radius: 12px; box-shadow: 0 18px 50px rgba(28,43,58,.35);
+                width: min(30rem, 92vw); padding: 1.4rem 1.5rem; }
+  #modal h3 { margin: 0 0 .2rem; }
+  /* Chat */
+  .bubble-row { display: flex; margin: .35rem 0; }
+  .bubble { max-width: 76%; padding: .55rem .8rem; border-radius: 12px; box-shadow: var(--shadow); }
+  .bubble.me { background: var(--accent-soft); margin-left: auto; border-bottom-right-radius: 4px; }
+  .bubble.agent { background: var(--panel); border: 1px solid var(--line); border-bottom-left-radius: 4px; }
+  .bubble.pending { color: var(--ink2); font-style: italic; }
+  .ai-badge { display: inline-flex; align-items: center; gap: .35rem; font-size: .72rem;
+              font-weight: 700; color: var(--ai); background: var(--ai-soft);
+              border-radius: 999px; padding: .15em .7em; letter-spacing: .04em; }
 </style>
 </head>
 <body>
 <header>
   <h1>Claim<span>flow</span></h1>
-  <span class="muted">the classic portal</span>
   <div class="spacer"></div>
   <span id="who"></span>
   <button class="bell" id="bellBtn" hidden>🔔<span class="n" id="bellCount" hidden></span></button>
@@ -74,8 +99,9 @@
 <div id="inboxPanel" hidden></div>
 <main id="app"><div class="login-hero">
   <h2>Your claims, without the paperwork</h2>
-  <p class="muted">Sign in to submit a claim, upload bills when asked, and watch it move.</p>
+  <p class="muted">Sign in to submit a claim — with a form, or by telling our AI agent what happened.</p>
 </div></main>
+<div id="modal" hidden></div>
 <script src="app.js"></script>
 </body>
 </html>
