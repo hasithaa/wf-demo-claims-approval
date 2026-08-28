@@ -76,6 +76,7 @@ function shell(content) {
   app.innerHTML = `
     <div class="tabs">
       <button class="${tab === 'claims' ? 'active' : ''}" onclick="setTab('claims')">My claims</button>
+      <button class="${tab === 'smart' ? 'active' : ''}" onclick="setTab('smart')">Smart claim</button>
       ${decider ? `<button class="${tab === 'tasks' ? 'active' : ''}" onclick="setTab('tasks')">Decisions</button>` : ''}
     </div>${content}`;
 }
@@ -186,6 +187,78 @@ window.decide = async (taskId, result) => {
   refresh();
 };
 
+// ── Smart claim: chatting with the durable agent ──────────────────────────────
+// Every user turn is a sendData on the agent's chat channel; the reply for exactly
+// that turn comes back by its correlation token. A pending reply usually means the
+// payment gate is waiting on the accountant — which is the demo's point.
+
+const chat = () => JSON.parse(sessionStorage.getItem('chat') || '{"id":null,"log":[]}');
+const saveChat = (c) => sessionStorage.setItem('chat', JSON.stringify(c));
+
+function renderSmart() {
+  const c = chat();
+  const log = c.log.length === 0
+    ? '<div class="empty">Say what happened — the agent files the claim, estimates the payout, and asks the accountant to release the money.</div>'
+    : c.log.map((m) => `
+      <div class="row" style="justify-content:${m.who === 'me' ? 'flex-end' : 'flex-start'}">
+        <div class="card" style="max-width:75%;margin:.2rem 0;${m.who === 'me' ? 'background:#E7EEF5;' : ''}">
+          ${m.pending ? '<span class="muted">… working (a payment may be waiting on the accountant)</span>' : esc(m.text)}
+        </div>
+      </div>`).join('');
+  shell(`
+    <div class="card">
+      <div id="chatlog" style="max-height:24rem;overflow:auto">${log}</div>
+      <div class="row" style="margin-top:.7rem">
+        <input type="text" id="chatmsg" placeholder="e.g. Broke my laptop on a work trip, about $1200" style="flex:1;min-width:16rem">
+        <button class="primary" onclick="sendChat()">Send</button>
+        <button class="quiet" onclick="resetChat()">New conversation</button>
+      </div>
+    </div>`);
+  const el = document.getElementById('chatlog');
+  if (el) el.scrollTop = el.scrollHeight;
+}
+
+window.resetChat = () => { sessionStorage.removeItem('chat'); renderSmart(); };
+
+window.sendChat = async () => {
+  const input = document.getElementById('chatmsg');
+  const text = input.value.trim();
+  if (!text) return;
+  let c = chat();
+  if (!c.id) {
+    const created = await api('/agent/conversations', { method: 'POST' });
+    if (!created.ok) return alert('Could not start the agent: ' + (await created.text()));
+    c.id = (await created.json()).conversationId;
+  }
+  c.log.push({ who: 'me', text });
+  const sent = await api(`/agent/conversations/${c.id}/messages`, { method: 'POST', body: JSON.stringify({ message: text }) });
+  if (!sent.ok) { alert('Send failed: ' + (await sent.text())); return; }
+  const { token: turn } = await sent.json();
+  c.log.push({ who: 'agent', pending: true, turn });
+  saveChat(c); renderSmart();
+  pollReply(c.id, turn);
+};
+
+async function pollReply(id, turn) {
+  // The server long-polls (waitForDataResult); the proxy cuts a poll after ~60s and we
+  // simply ask again — a long-held payment gate is successive quiet polls, not an error.
+  for (let i = 0; i < 120; i++) {
+    let res;
+    try { res = await api(`/agent/conversations/${id}/replies/${turn}`); }
+    catch { await new Promise((r) => setTimeout(r, 2000)); continue; }
+    if (res.status === 200) {
+      const { reply } = await res.json();
+      const c = chat();
+      const slot = c.log.find((m) => m.turn === turn);
+      if (slot) { slot.pending = false; slot.text = reply; }
+      saveChat(c);
+      if (tab === 'smart') renderSmart();
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+}
+
 // ── Inbox ─────────────────────────────────────────────────────────────────────
 
 const bellBtn = document.getElementById('bellBtn');
@@ -217,6 +290,7 @@ bellBtn.onclick = () => { inboxPanel.hidden = !inboxPanel.hidden; };
 async function refresh() {
   if (!token()) return;
   if (tab === 'tasks' && isDecider()) await renderTasks();
+  else if (tab === 'smart') renderSmart();   // chat re-renders locally; polls own turns
   else await renderClaims();
   await refreshInbox();
 }

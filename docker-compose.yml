@@ -91,7 +91,7 @@ services:
       ICP_ADMIN_USER: ${ICP_ADMIN_USER:-admin}
       ICP_ADMIN_PASSWORD: ${ICP_ADMIN_PASSWORD:-admin}
       ICP_ENVIRONMENT_ID: ${ICP_ENVIRONMENT_ID:-750e8400-e29b-41d4-a716-446655440001}
-      INTEGRATIONS: claims bill-store notifications
+      INTEGRATIONS: claims bill-store notifications claims-agent
     volumes:
       - org-secrets:/secrets
     depends_on:
@@ -270,6 +270,36 @@ services:
       # ICP reachability is preserved: this is the host talking to the integration, which
       # is exactly what the user portal will be.
       - "${CLAIMS_PORT:-9080}:8080"
+    volumes:
+      - org-secrets:/secrets:ro
+    depends_on:
+      temporal:
+        condition: service_healthy
+      appdb:
+        condition: service_healthy
+      edge:
+        condition: service_started
+
+  claims-agent:
+    build:
+      context: ./integrations/claims-agent
+    image: claimflow/claims-agent:local
+    networks: [integration-net]
+    environment:
+      JAVA_TOOL_OPTIONS: -Xmx${INTEGRATION_HEAP:-384m}
+      ICP_SERVER_URL: https://edge:9445
+      ICP_ORG_SECRET_FILE: /secrets/claims-agent.secret
+      ICP_PROJECT: ${ICP_PROJECT:-claimflow}
+      ICP_ENVIRONMENT: ${ICP_ENVIRONMENT:-dev}
+      TEMPORAL_URL: temporal:7233
+      HEARTBEAT_INTERVAL: ${HEARTBEAT_INTERVAL:-10}
+      THUNDER_PUBLIC_URL: ${THUNDER_PUBLIC_URL:-https://localhost:8090}
+      # The WSO2 default AI provider. Generate a token from VS Code (the Ballerina
+      # Integrator's "default model provider" flow), put both values in .env, and
+      # `docker compose up -d claims-agent` again — the token expires hourly, which is
+      # why it travels as environment rather than baked config. Empty = scripted model.
+      WSO2_AI_SERVICE_URL: ${WSO2_AI_SERVICE_URL:-}
+      WSO2_AI_TOKEN: ${WSO2_AI_TOKEN:-}
     volumes:
       - org-secrets:/secrets:ro
     depends_on:

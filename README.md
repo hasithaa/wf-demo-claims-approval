@@ -60,6 +60,30 @@ Three browser sessions on http://localhost:9090:
 The portal is deliberately small: decision buttons and a comment box — the fast lane.
 Deep context lives in the console.
 
+### The Smart Claim portal (the agentic act)
+
+The **Smart claim** tab is a chat with a durable agent. Bob types what happened; the
+agent files the claim, estimates the payout, and — told to "pay" — reaches for the
+payment activity, which is **gated**: `requiresApproval: true` raises a PRE_RUN review
+an `ACCOUNTANT` decides in the ICP console (claims-agent → Human Tasks → the approval
+gate). The chat bubble stays "working…" exactly as long as the gate holds — same
+governance as the classic flow, agentic execution. Every turn rides the agent's `chat`
+event channel with a correlation token; a conversation survives restarts.
+
+**Model provider.** With no configuration the agent runs a scripted stand-in (an
+in-process endpoint speaking the provider's own wire protocol), so the demo works
+offline and keyless. To use the real **WSO2 default model provider**: generate a token
+from VS Code (Ballerina Integrator → the integration → default model provider token —
+it shows a service URL and an access token, valid ~1 hour), put both in `.env` as
+`WSO2_AI_SERVICE_URL` / `WSO2_AI_TOKEN`, and `docker compose up -d claims-agent`. The
+token travels as environment on purpose — it expires hourly, so refreshing is
+"update `.env`, recreate the one container", never an image rebuild.
+
+> Why the project-level Human Tasks page looks different with one vs several workflow
+> integrations: with exactly one, the page deliberately behaves as that integration (a
+> dashboard of one card would be a detour); from the second workflow integration on —
+> which this phase adds — it becomes the per-integration dashboard with task counts.
+
 ## Walk the claim through (console-only variant)
 
 Everything also works from the ICP console alone — sign in with SSO as
@@ -126,6 +150,7 @@ edge/            the gateway config
 seed/            first-boot secret minting
 integrations/
   claims/         the claim workflow + the portal API (submit, my claims, tasks, decide)
+  claims-agent/   the Smart Claim durable agent: chat channel, gated payment, mock LLM wire
   bill-store/     bill upload/download with file state (its own DB + volume)
   notifications/  the per-user inbox (its own DB)
 webapp/           the Claimflow portal: static SPA (no build step) + same-origin proxy
@@ -133,12 +158,10 @@ webapp/           the Claimflow portal: static SPA (no build step) + same-origin
 
 ## Roadmap
 
-Phases 1–4 of the Claimflow proposal are in place: the claim process, the bill store,
-the notification inbox, the claims database as the durable record, Thunder SSO with
-group→role mappings, and the Claimflow user portal (OIDC PKCE sign-in, submit/upload/
-attach, inbox, and a limited Decisions view that completes the same tasks the console
-does — the module is the arbiter either way). Coming next: the chat-based Smart Claim
-portal driving a durable agent whose payment tool needs accountant pre-approval.
+All five phases of the Claimflow proposal are in place: the claim process, the bill
+store, the notification inbox, the claims database as the durable record, Thunder SSO
+with group→role mappings, the classic portal, and the chat-based Smart Claim portal
+driving a durable agent whose payment step needs accountant pre-approval.
 
 Demo-only notes: `seed/thunder-tls/` holds a committed self-signed TLS pair whose SANs
 cover both `localhost` (browser) and `thunder` (the ICP's server-side JWKS fetch) — do

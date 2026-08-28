@@ -1,0 +1,29 @@
+# ── Service database and neighbours ───────────────────────────────────────────
+[claimflow.claims_agent]
+dbHost = "appdb"
+dbUser = "app"
+dbPassword = "app"
+dbName = "claims_db"
+notificationsUrl = "http://notifications:8080"
+idpIssuer = "@THUNDER_PUBLIC_URL@"
+idpJwksUrl = "https://thunder:8090/oauth2/jwks"
+
+# ── Workflow engine ───────────────────────────────────────────────────────────
+[ballerina.workflow]
+mode = "SELF_HOSTED"
+url = "@TEMPORAL_URL@"
+namespace = "default"
+taskQueue = "CLAIMS_AGENT_TASK_QUEUE"
+
+# ── ICP runtime bridge ────────────────────────────────────────────────────────
+[wso2.icp.runtime.bridge]
+serverUrl = "@ICP_SERVER_URL@"
+enableSSL = false
+heartbeatInterval = @HEARTBEAT_INTERVAL@
+
+secret = "@ICP_ORG_SECRET@"
+project = "@ICP_PROJECT@"
+integration = "claims-agent"
+environment = "@ICP_ENVIRONMENT@"
+
+enableWorkflowManagement = true

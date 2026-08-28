@@ -19,7 +19,7 @@ cd "$HERE"
 command -v docker >/dev/null 2>&1 || { echo "docker is required (and is the only prerequisite)" >&2; exit 1; }
 
 ICP_DIST="wso2-integration-control-plane-2.0.0-SNAPSHOT"
-INTEGRATIONS=(claims bill-store notifications)
+INTEGRATIONS=(claims bill-store notifications claims-agent)
 
 log() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 
