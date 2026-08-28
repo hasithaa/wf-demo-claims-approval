@@ -5,11 +5,42 @@
 // arrives as the `billUploaded` event carrying the bill-store URL, and the payment is
 // released by an accountant before it executes.
 //
-// Importing the bridge is the whole ICP story — no management port, no plumbing.
+// The workflow is the orchestrator, not the database: every state change runs the
+// recordClaimState activity, which upserts the claims table. Temporal keeps history for
+// its retention window; the claims table is the record that outlives it, and what the
+// user portal lists.
 import ballerina/http;
 import ballerina/log;
+import ballerina/sql;
 import ballerina/workflow;
+import ballerinax/postgresql;
+import ballerinax/postgresql.driver as _;
 import wso2/icp.runtime.bridge as _;
+
+configurable string dbHost = "appdb";
+configurable int dbPort = 5432;
+configurable string dbUser = "app";
+configurable string dbPassword = "app";
+configurable string dbName = "claims_db";
+configurable string notificationsUrl = "http://notifications:8080";
+
+final postgresql:Client db = check initDb();
+final http:Client notifications = check new (notificationsUrl);
+
+function initDb() returns postgresql:Client|error {
+    postgresql:Client c = check new (host = dbHost, port = dbPort,
+        username = dbUser, password = dbPassword, database = dbName);
+    _ = check c->execute(`CREATE TABLE IF NOT EXISTS claims (
+        claim_id VARCHAR(100) PRIMARY KEY,
+        workflow_id VARCHAR(100) NOT NULL,
+        submitted_by VARCHAR(200) NOT NULL,
+        amount NUMERIC(12,2) NOT NULL,
+        status VARCHAR(24) NOT NULL,
+        bill_url VARCHAR(600),
+        note VARCHAR(600),
+        updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
+    return c;
+}
 
 type Claim record {|
     string id;
@@ -20,14 +51,14 @@ type Claim record {|
     string billUrl?;
 |};
 
-type BillAttachment record {|
-    string url;
-    string note?;
-|};
-
 type Validation record {|
     boolean plausible;
     string note;
+|};
+
+type BillAttachment record {|
+    string url;
+    string note?;
 |};
 
 // The three-way decision the manager makes. The string-literal union renders as a
@@ -55,12 +86,26 @@ type ClaimResult record {|
     string reason?;
 |};
 
+type ClaimRecord record {|
+    string claimId;
+    string workflowId;
+    string submittedBy;
+    decimal amount;
+    string status;
+    string? billUrl;
+    string? note;
+    string updatedAt;
+|};
+
 # A claim from submission to payment. Parks on the manager's review; when the manager
 # requests a bill, parks again on the `billUploaded` event and reviews once more with
 # the bill in the payload.
 @workflow:Workflow
 function claimApproval(workflow:Context ctx, Claim claim,
         record {|future<json> billUploaded;|} events) returns ClaimResult|error {
+    string wfId = check ctx.getWorkflowId();
+    string _submitted = check ctx->callActivity(recordClaimState,
+        {"claim": claim, "workflowId": wfId, "status": "SUBMITTED", "note": ()});
     Validation v = check ctx->callActivity(validateClaim,
         {"id": claim.id, "amount": claim.amount});
 
@@ -76,10 +121,17 @@ function claimApproval(workflow:Context ctx, Claim claim,
         title = "Review claim " + claim.id);
 
     if decision.outcome == "REQUEST_BILL" {
+        string _billAsked = check ctx->callActivity(recordClaimState,
+            {"claim": claim, "workflowId": wfId, "status": "BILL_REQUESTED", "note": decision?.comment});
         string _billAsk = check ctx->callActivity(notifyUser,
-            {"user": claim.submittedBy, "message": "A bill is required for claim " + claim.id});
+            {"user": claim.submittedBy, "title": "A bill is required for claim " + claim.id,
+                "body": decision?.comment, "link": ()});
         // Parks until a bill is attached (the bill store's URL travels in the event).
         json bill = check wait events.billUploaded;
+        string billUrl = check bill.url;
+        claim.billUrl = billUrl;
+        string _billIn = check ctx->callActivity(recordClaimState,
+            {"claim": claim, "workflowId": wfId, "status": "BILL_ATTACHED", "note": ()});
         decision = check ctx->awaitHumanTask("reviewClaimWithBill", "MANAGER",
             payload = {
                 "claimId": claim.id,
@@ -91,8 +143,11 @@ function claimApproval(workflow:Context ctx, Claim claim,
     }
 
     if decision.outcome != "APPROVE" {
+        string _r = check ctx->callActivity(recordClaimState,
+            {"claim": claim, "workflowId": wfId, "status": "REJECTED", "note": decision?.comment});
         string _rejected = check ctx->callActivity(notifyUser,
-            {"user": claim.submittedBy, "message": "Claim " + claim.id + " was rejected"});
+            {"user": claim.submittedBy, "title": "Claim " + claim.id + " was rejected",
+                "body": decision?.comment, "link": ()});
         return {claimId: claim.id, status: "REJECTED", reason: decision?.comment};
     }
 
@@ -101,15 +156,21 @@ function claimApproval(workflow:Context ctx, Claim claim,
         payload = {"claimId": claim.id, "amount": claim.amount, "payee": claim.submittedBy},
         title = "Approve payment for claim " + claim.id);
     if !pay.approved {
+        string _pr = check ctx->callActivity(recordClaimState,
+            {"claim": claim, "workflowId": wfId, "status": "PAYMENT_REFUSED", "note": pay?.comment});
         string _refused = check ctx->callActivity(notifyUser,
-            {"user": claim.submittedBy, "message": "Payment for claim " + claim.id + " was refused"});
+            {"user": claim.submittedBy, "title": "Payment for claim " + claim.id + " was refused",
+                "body": pay?.comment, "link": ()});
         return {claimId: claim.id, status: "REJECTED", reason: pay?.comment};
     }
 
     Receipt receipt = check ctx->callActivity(executePayment,
         {"claimId": claim.id, "amount": claim.amount, "account": pay?.account});
+    string _paidState = check ctx->callActivity(recordClaimState,
+        {"claim": claim, "workflowId": wfId, "status": "PAID", "note": receipt.reference});
     string _paid = check ctx->callActivity(notifyUser,
-        {"user": claim.submittedBy, "message": "Claim " + claim.id + " paid: " + receipt.reference});
+        {"user": claim.submittedBy, "title": "Claim " + claim.id + " paid",
+            "body": "Reference " + receipt.reference, "link": ()});
     return {claimId: claim.id, status: "PAID", reference: receipt.reference};
 }
 
@@ -126,24 +187,66 @@ function validateClaim(string id, decimal amount) returns Validation|error {
 
 @workflow:Activity
 function executePayment(string claimId, decimal amount, string? account) returns Receipt|error {
-    // Phase 2 turns this into a real transfer against the claims database.
+    // A later phase can make this a real transfer; the gate in front of it is the point.
     return {reference: "PAY-" + claimId, amount: amount};
 }
 
+# The durable record: every transition upserts the claims table. Idempotent by
+# construction, so a replay that re-runs nothing (activities never re-execute) and a
+# retry that runs twice both leave the same row.
 @workflow:Activity
-function notifyUser(string user, string message) returns string|error {
-    // Phase 2 posts this to the notification service; until then the log is the inbox.
-    log:printInfo(string `notify ${user}: ${message}`);
+function recordClaimState(Claim claim, string workflowId, string status, string? note)
+        returns string|error {
+    _ = check db->execute(`INSERT INTO claims
+            (claim_id, workflow_id, submitted_by, amount, status, bill_url, note, updated_at)
+        VALUES (${claim.id}, ${workflowId}, ${claim.submittedBy}, ${claim.amount},
+            ${status}, ${claim?.billUrl}, ${note}, now())
+        ON CONFLICT (claim_id) DO UPDATE SET
+            status = EXCLUDED.status,
+            bill_url = COALESCE(EXCLUDED.bill_url, claims.bill_url),
+            note = EXCLUDED.note,
+            updated_at = now()`);
+    return status;
+}
+
+@workflow:Activity
+function notifyUser(string user, string title, string? body, string? link) returns string|error {
+    // Best-effort: a notification hiccup must not wedge a claim.
+    json|error posted = notifications->post("/notifications",
+        {user: user, title: title, body: body, link: link});
+    if posted is error {
+        log:printWarn("could not deliver a notification", 'error = posted);
+        return "undelivered";
+    }
     return "notified";
 }
 
-// The bill inlet: what the bill store (and, until it exists, curl) calls to attach a
-// bill to a waiting claim. Delivered into the parked instance as the `billUploaded`
-// event — events travel through code in the owning integration, not through the ICP.
+// The claims API: the bill inlet and the durable listing live here because events and
+// the claims table both belong to this integration. The user portal calls these.
 service /claims on new http:Listener(8080) {
+
+    # The bill inlet: what the bill store calls to attach a bill to a waiting claim.
+    # Delivered into the parked instance as the `billUploaded` event — events travel
+    # through code in the owning integration, not through the ICP.
     resource function post [string workflowId]/bills(BillAttachment bill) returns json|error {
         check workflow:sendData(claimApproval, workflowId, "billUploaded", bill.toJson());
         log:printInfo(string `bill attached to ${workflowId}: ${bill.url}`);
         return {attached: true, workflowId: workflowId};
+    }
+
+    # A user's claims, from the durable record — not from Temporal, whose history ages
+    # out with the retention window.
+    resource function get .(string? user) returns ClaimRecord[]|error {
+        sql:ParameterizedQuery q = user is string
+            ? `SELECT claim_id AS "claimId", workflow_id AS "workflowId",
+                      submitted_by AS "submittedBy", amount, status, bill_url AS "billUrl",
+                      note, updated_at::text AS "updatedAt"
+                 FROM claims WHERE submitted_by = ${user} ORDER BY updated_at DESC LIMIT 100`
+            : `SELECT claim_id AS "claimId", workflow_id AS "workflowId",
+                      submitted_by AS "submittedBy", amount, status, bill_url AS "billUrl",
+                      note, updated_at::text AS "updatedAt"
+                 FROM claims ORDER BY updated_at DESC LIMIT 100`;
+        stream<ClaimRecord, sql:Error?> rows = db->query(q);
+        return from ClaimRecord c in rows select c;
     }
 }

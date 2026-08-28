@@ -1,0 +1,20 @@
+# ── Service database ──────────────────────────────────────────────────────────
+[claimflow.notifications]
+dbHost = "appdb"
+dbUser = "app"
+dbPassword = "app"
+dbName = "notifications_db"
+
+# ── ICP runtime bridge ────────────────────────────────────────────────────────
+[wso2.icp.runtime.bridge]
+serverUrl = "@ICP_SERVER_URL@"
+enableSSL = false
+heartbeatInterval = @HEARTBEAT_INTERVAL@
+
+secret = "@ICP_ORG_SECRET@"
+project = "@ICP_PROJECT@"
+integration = "notifications"
+environment = "@ICP_ENVIRONMENT@"
+
+# A plain service: registers and reports artifacts, accepts no workflow commands.
+enableWorkflowManagement = false

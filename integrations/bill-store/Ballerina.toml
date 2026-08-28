@@ -1,0 +1,16 @@
+[package]
+org = "claimflow"
+name = "bill_store"
+version = "0.1.0"
+distribution = "2201.13.4"
+
+# The bridge resolves from the local repository; build.sh publishes it there from
+# prebuilt/. This service integration does not run workflows, so no workflow dependency.
+[[dependency]]
+org = "wso2"
+name = "icp.runtime.bridge"
+version = "0.3.0-SNAPSHOT"
+repository = "local"
+
+[build-options]
+observabilityIncluded = false

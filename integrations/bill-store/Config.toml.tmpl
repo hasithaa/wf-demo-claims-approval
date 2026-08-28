@@ -1,0 +1,23 @@
+# ── Service database and storage ──────────────────────────────────────────────
+[claimflow.bill_store]
+dbHost = "appdb"
+dbUser = "app"
+dbPassword = "app"
+dbName = "bills_db"
+storageDir = "/data/bills"
+publicBaseUrl = "@BILLS_PUBLIC_URL@"
+claimsUrl = "http://claims:8080"
+
+# ── ICP runtime bridge ────────────────────────────────────────────────────────
+[wso2.icp.runtime.bridge]
+serverUrl = "@ICP_SERVER_URL@"
+enableSSL = false
+heartbeatInterval = @HEARTBEAT_INTERVAL@
+
+secret = "@ICP_ORG_SECRET@"
+project = "@ICP_PROJECT@"
+integration = "bill-store"
+environment = "@ICP_ENVIRONMENT@"
+
+# A plain service: registers and reports artifacts, accepts no workflow commands.
+enableWorkflowManagement = false

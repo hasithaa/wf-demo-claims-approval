@@ -16,6 +16,8 @@ CLAIMS_PORT="${PRESET_CLAIMS_PORT:-${CLAIMS_PORT:-9080}}"
 
 CONSOLE="${PRESET_CONSOLE:-https://localhost:${CONSOLE_PORT}}"
 CLAIMS="${PRESET_CLAIMS:-http://localhost:${CLAIMS_PORT}}"
+BILLS="${BILLS:-http://localhost:${BILLS_PORT:-9081}}"
+NOTIFICATIONS="${NOTIFICATIONS:-http://localhost:${NOTIFICATIONS_PORT:-9082}}"
 ENV_ID="${ICP_ENVIRONMENT_ID:-750e8400-e29b-41d4-a716-446655440001}"
 ADMIN="${ICP_ADMIN_USER:-admin}"; PASSWORD="${ICP_ADMIN_PASSWORD:-admin}"
 OUT="$(mktemp)"; BODY="$(mktemp)"
@@ -99,10 +101,17 @@ say "3. Manager asks for the bill (REQUEST_BILL)"
 printf '{"result":{"outcome":"REQUEST_BILL","comment":"need the receipt"}}' > "$BODY"
 echo "   -> $(wf_mutate "human-tasks/$TASK/complete")"
 
-say "4. Alice attaches the bill (through the integration, not the ICP)"
-code=$(curl -s -o "$OUT" -w '%{http_code}' -X POST "$CLAIMS/claims/$WFID/bills" \
-    -H 'Content-Type: application/json' -d "{\"url\": \"https://bills/${CLAIM}.pdf\"}")
-echo "   -> $code $(cat "$OUT")"
+say "4. Alice uploads the bill to the bill store, then attaches it to her claim"
+printf 'A receipt for %s — imagine a PDF.' "$CLAIM" > "$BODY"
+code=$(curl -s -o "$OUT" -w '%{http_code}' -X POST \
+    "$BILLS/bills?filename=${CLAIM}-receipt.pdf&owner=alice&claimId=$CLAIM" \
+    -H 'Content-Type: application/octet-stream' --data-binary @"$BODY")
+BILL_ID=$(jqr 'print(d.get("billId",""))')
+echo "   -> $code uploaded  billId=$BILL_ID  url=$(jqr 'print(d.get("url",""))')"
+printf '{"workflowId":"%s","claimId":"%s"}' "$WFID" "$CLAIM" > "$BODY"
+code=$(curl -s -o "$OUT" -w '%{http_code}' -X POST "$BILLS/bills/$BILL_ID/attach" \
+    -H 'Content-Type: application/json' -d @"$BODY")
+echo "   -> $code attached: $(cat "$OUT")"
 
 say "5. The review returns with the bill; manager approves"
 TASK2=$(task_for "$WFID" "$TASK"); echo "   -> task $TASK2"
@@ -122,3 +131,16 @@ for i in $(seq 1 15); do
     sleep 4
 done
 jqr "print('   -> ' + d.get('status','?') + '  result: ' + json.dumps(d.get('result'))[:160])"
+
+say "8. Alice's inbox tells the story"
+curl -s "$NOTIFICATIONS/notifications?user=alice" -o "$OUT"
+jqr "
+for n in d[:6]:
+    print('   -', n['title'])"
+
+say "9. The durable record (the claims DB, not Temporal)"
+curl -s "$CLAIMS/claims?user=alice" -o "$OUT"
+jqr "
+m=[c for c in d if c['claimId']=='$CLAIM']
+c=m[0]
+print('   ->', c['claimId'], c['status'], '| bill:', c.get('billUrl'), '| note:', c.get('note'))"

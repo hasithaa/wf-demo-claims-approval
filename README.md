@@ -20,6 +20,7 @@ Then open the admin console — note the **https**:
 | What | Where | Sign in |
 |---|---|---|
 | ICP console (admin portal) | https://localhost:9664 | `admin` / `admin` |
+| Claims API / bill store / inbox | http://localhost:9080 · 9081 · 9082 | — |
 | Thunder (identity, later phases) | https://localhost:8090/console | `admin` / `admin12345` |
 | Temporal UI (optional) | `docker compose --profile ui up -d temporal-ui` → http://localhost:8233 | — |
 
@@ -34,13 +35,21 @@ Until the user portal lands, the ICP console plays every part:
    `{"id": "CLM-1001", "amount": 2400, "submittedBy": "alice"}`.
 2. **Human Tasks** → *Review claim CLM-1001* → complete it with outcome `REQUEST_BILL`.
    The instance parks, waiting for the bill.
-3. Attach the bill — events travel through the integration, not the ICP:
-   `curl -X POST http://localhost:9080/claims/<workflowId>/bills -H 'Content-Type: application/json' -d '{"url": "https://bills/CLM-1001.pdf"}'`
-   (the workflow id is on the instance you started).
+3. Upload the bill to the bill store and attach it (events travel through the
+   integrations, not the ICP):
+   ```sh
+   curl -X POST 'http://localhost:9081/bills?filename=receipt.pdf&owner=alice&claimId=CLM-1001' \
+        -H 'Content-Type: application/octet-stream' --data-binary @receipt.pdf
+   curl -X POST http://localhost:9081/bills/<billId>/attach \
+        -H 'Content-Type: application/json' -d '{"workflowId": "<workflowId>"}'
+   ```
 4. The review returns with the bill attached → complete with `APPROVE`.
 5. *Approve payment for claim CLM-1001* appears → complete it (`approved: true`).
 6. The claim completes `PAID`; the execution-flow view shows the whole path — both
    reviews, the event wait, the payment.
+7. What the user would see: `curl http://localhost:9082/notifications?user=alice` (the
+   inbox) and `curl http://localhost:9080/claims?user=alice` (the durable record — the
+   claims table the workflow maintains, which outlives Temporal's retention window).
 
 The admin already holds `MANAGER` and `ACCOUNTANT` — the demo seeds those roles at first
 boot (`db/initdb/30-demo-roles.sql`); a later phase replaces them with Thunder SSO group
@@ -56,8 +65,11 @@ the demo's dry run.
 browser ──► edge (nginx, the one gateway)
               ├── ICP console  ── postgres (icp_db + credentials_db)
               └── (integration side is only reachable OUTWARD)
-claims integration ──► temporal (+ its postgres, 30-day retention)
-        └──── heartbeats out to the ICP through the edge; commands ride the responses
+claims        ──► temporal (30-day retention) · claims_db (the durable record)
+bill-store    ──► bills_db + a file volume; forwards attached bills to claims
+notifications ──► notifications_db; the user-facing inbox
+        └──── all three heartbeat out to the ICP through the edge
+appdb   ── one Postgres for the integration side, one database per service
 thunder ── identity provider (OIDC), the single user store for later phases
 seed    ── one-shot: mints the integrations' org secrets against the running ICP
 ```
@@ -78,12 +90,15 @@ db/initdb/       Postgres first-boot scripts (apply the zip's own schema)
 edge/            the gateway config
 seed/            first-boot secret minting
 integrations/
-  claims/        the claim-approval workflow integration
+  claims/         the claim-approval workflow integration (+ claims_db record, bill inlet)
+  bill-store/     bill upload/download with file state (its own DB + volume)
+  notifications/  the per-user inbox (its own DB)
 ```
 
 ## Roadmap
 
-This is phase 1 of the [Claimflow proposal]: coming next are the bill-store and
-notification services, Thunder SSO with `MANAGER`/`ACCOUNTANT` group mappings
-(Jane/John/Alice/Bob), the user portal (classic forms + a chat-based Smart Claim portal
-driving a durable agent whose payment tool needs accountant pre-approval).
+Phases 1–2 of the Claimflow proposal are in place: the claim process, the bill store,
+the notification inbox, and the claims database as the durable record. Coming next:
+Thunder SSO with `MANAGER`/`ACCOUNTANT` group mappings (Jane/John/Alice/Bob), the user
+portal (classic forms), and a chat-based Smart Claim portal driving a durable agent
+whose payment tool needs accountant pre-approval.

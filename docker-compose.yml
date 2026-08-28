@@ -17,6 +17,8 @@ networks:
 volumes:
   postgres-data:
   temporal-postgres-data:
+  appdb-data:
+  bills-data:
   thunder-data:
   icp-logs:
   # The seed service writes minted org secrets here; integrations read them.
@@ -82,7 +84,7 @@ services:
       ICP_ADMIN_USER: ${ICP_ADMIN_USER:-admin}
       ICP_ADMIN_PASSWORD: ${ICP_ADMIN_PASSWORD:-admin}
       ICP_ENVIRONMENT_ID: ${ICP_ENVIRONMENT_ID:-750e8400-e29b-41d4-a716-446655440001}
-      INTEGRATIONS: claims
+      INTEGRATIONS: claims bill-store notifications
     volumes:
       - org-secrets:/secrets
     depends_on:
@@ -183,6 +185,24 @@ services:
       temporal:
         condition: service_healthy
 
+  # The integration side's own database: one container, one database per service, so the
+  # separation between services stays real at demo cost.
+  appdb:
+    image: postgres:16-alpine
+    networks: [integration-net]
+    environment:
+      POSTGRES_USER: app
+      POSTGRES_PASSWORD: app
+      POSTGRES_DB: app
+    volumes:
+      - appdb-data:/var/lib/postgresql/data
+      - ./db/appdb-init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U app -d app"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
   claims:
     build:
       context: ./integrations/claims
@@ -205,6 +225,56 @@ services:
       - org-secrets:/secrets:ro
     depends_on:
       temporal:
+        condition: service_healthy
+      appdb:
+        condition: service_healthy
+      edge:
+        condition: service_started
+
+  bill-store:
+    build:
+      context: ./integrations/bill-store
+    image: claimflow/bill-store:local
+    networks: [integration-net]
+    environment:
+      JAVA_TOOL_OPTIONS: -Xmx${INTEGRATION_HEAP:-384m}
+      ICP_SERVER_URL: https://edge:9445
+      ICP_ORG_SECRET_FILE: /secrets/bill-store.secret
+      ICP_PROJECT: ${ICP_PROJECT:-claimflow}
+      ICP_ENVIRONMENT: ${ICP_ENVIRONMENT:-dev}
+      HEARTBEAT_INTERVAL: ${HEARTBEAT_INTERVAL:-10}
+      BILLS_PUBLIC_URL: http://localhost:${BILLS_PORT:-9081}
+    ports:
+      # Upload and fetch bills from the host (and, later, the user portal).
+      - "${BILLS_PORT:-9081}:8080"
+    volumes:
+      - org-secrets:/secrets:ro
+      - bills-data:/data/bills
+    depends_on:
+      appdb:
+        condition: service_healthy
+      edge:
+        condition: service_started
+
+  notifications:
+    build:
+      context: ./integrations/notifications
+    image: claimflow/notifications:local
+    networks: [integration-net]
+    environment:
+      JAVA_TOOL_OPTIONS: -Xmx${INTEGRATION_HEAP:-384m}
+      ICP_SERVER_URL: https://edge:9445
+      ICP_ORG_SECRET_FILE: /secrets/notifications.secret
+      ICP_PROJECT: ${ICP_PROJECT:-claimflow}
+      ICP_ENVIRONMENT: ${ICP_ENVIRONMENT:-dev}
+      HEARTBEAT_INTERVAL: ${HEARTBEAT_INTERVAL:-10}
+    ports:
+      # The inbox, for the demo and the future portal bell.
+      - "${NOTIFICATIONS_PORT:-9082}:8080"
+    volumes:
+      - org-secrets:/secrets:ro
+    depends_on:
+      appdb:
         condition: service_healthy
       edge:
         condition: service_started
