@@ -1,0 +1,9 @@
+# Build outputs staged by build.sh (regenerated from prebuilt/ every run)
+artifacts/
+icp/artifacts/
+integrations/*/artifacts/
+integrations/*/target/
+integrations/*/Dependencies.toml
+# Extracted from the bridge bala by bal during build — regenerated every build.sh run
+prebuilt/compiler-plugin/
+prebuilt/platform/

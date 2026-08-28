@@ -1,0 +1,210 @@
+# Claimflow demo — single ICP node, one gateway, Thunder identity, one (for now)
+# workflow integration. Run ./build.sh once, then `docker compose up -d`.
+#
+# Two networks, one bridge. `icp-net` holds the control plane and its database;
+# `integration-net` holds the integrations and their Temporal server. Only `edge` is on
+# both, as a plain TCP proxy — integrations reach the ICP by dialing out; the ICP has no
+# route to any integration. Nothing listens on the integration side.
+
+name: claimflow
+
+networks:
+  icp-net:
+    name: claimflow-icp-net
+  integration-net:
+    name: claimflow-integration-net
+
+volumes:
+  postgres-data:
+  temporal-postgres-data:
+  thunder-data:
+  icp-logs:
+  # The seed service writes minted org secrets here; integrations read them.
+  org-secrets:
+
+services:
+  # ── Control plane ────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:16-alpine
+    networks: [icp-net]
+    environment:
+      POSTGRES_USER: ${POSTGRES_SUPERUSER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERPASSWORD:-postgres}
+      POSTGRES_DB: ${ICP_DB_NAME:-icp_db}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Ordered: the role first, then the ICP schema (the real scripts out of the
+      # distribution zip, staged by build.sh), then the grants.
+      - ./db/initdb:/docker-entrypoint-initdb.d:ro
+      - ./artifacts/db:/opt/icp-db:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_SUPERUSER:-postgres} -d ${ICP_DB_NAME:-icp_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  icp:
+    build:
+      context: ./icp
+      args:
+        ICP_DIST: ${ICP_DIST:-wso2-integration-control-plane-2.0.0-SNAPSHOT}
+    image: claimflow/icp:local
+    networks: [icp-net]
+    environment:
+      JAVA_TOOL_OPTIONS: -Xmx${ICP_HEAP:-512m}
+      ICP_NODE_ID: icp
+      ICP_DB_HOST: postgres
+      ICP_DB_NAME: ${ICP_DB_NAME:-icp_db}
+      ICP_DB_USER: ${ICP_DB_USER:-icp_user}
+      ICP_DB_PASSWORD: ${ICP_DB_PASSWORD:-icp_password}
+      ICP_PUBLIC_BASE_URL: ${ICP_PUBLIC_BASE_URL:-https://localhost:9664}
+    volumes:
+      - icp-logs:/opt/icp/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sk https://localhost:9446/auth/capabilities >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  # Mints the integrations' org secrets against the running ICP on first boot, into the
+  # org-secrets volume. One-shot; idempotent on restart.
+  seed:
+    build:
+      context: ./seed
+    image: claimflow/seed:local
+    networks: [icp-net]
+    environment:
+      ICP_URL: https://icp:9446
+      ICP_ADMIN_USER: ${ICP_ADMIN_USER:-admin}
+      ICP_ADMIN_PASSWORD: ${ICP_ADMIN_PASSWORD:-admin}
+      ICP_ENVIRONMENT_ID: ${ICP_ENVIRONMENT_ID:-750e8400-e29b-41d4-a716-446655440001}
+      INTEGRATIONS: claims
+    volumes:
+      - org-secrets:/secrets
+    depends_on:
+      icp:
+        condition: service_healthy
+    restart: "no"
+
+  # ── Identity ─────────────────────────────────────────────────────────────────
+  # Thunder is the OIDC provider and the single user store (SSO wiring lands in a later
+  # phase; the container is part of the stack from day one). First boot runs setup.sh,
+  # which generates key material into the persisted volume, then serves.
+  thunder:
+    image: ghcr.io/thunder-id/thunderid:1.0.0
+    networks: [icp-net]
+    entrypoint: ["sh", "-c"]
+    command: ['[ -f config/certs/crypto.key ] || ./setup.sh; exec ./start.sh']
+    environment:
+      ADMIN_USERNAME: ${THUNDER_ADMIN_USER:-admin}
+      ADMIN_PASSWORD: ${THUNDER_ADMIN_PASSWORD:-admin12345}
+      DIRECT_AUTH_SECRET: ${THUNDER_DIRECT_AUTH_SECRET:-claimflow-direct-secret}
+    volumes:
+      - thunder-data:/opt/thunderid/config
+    ports:
+      - "${THUNDER_PORT:-8090}:8090"
+
+  # ── The only thing on both networks ──────────────────────────────────────────
+  edge:
+    image: nginx:1.27-alpine
+    networks: [icp-net, integration-net]
+    volumes:
+      - ./edge/nginx.conf:/etc/nginx/nginx.conf:ro
+    ports:
+      # The admin console, for a browser on the host.
+      - "${CONSOLE_PORT:-9664}:9446"
+    depends_on:
+      icp:
+        condition: service_started
+
+  # ── Integration side ─────────────────────────────────────────────────────────
+  temporal-postgres:
+    image: postgres:16-alpine
+    networks: [integration-net]
+    environment:
+      POSTGRES_USER: ${TEMPORAL_DB_USER:-temporal}
+      POSTGRES_PASSWORD: ${TEMPORAL_DB_PASSWORD:-temporal}
+      # Named after the role deliberately: auto-setup creates a database only when its
+      # name differs from POSTGRES_USER. `temporal_visibility` differs, so it is created.
+      POSTGRES_DB: ${TEMPORAL_DB_USER:-temporal}
+    volumes:
+      - temporal-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${TEMPORAL_DB_USER:-temporal} -d ${TEMPORAL_DB_USER:-temporal}"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  temporal:
+    image: temporalio/auto-setup:${TEMPORAL_TAG:-1.29.7}
+    networks: [integration-net]
+    environment:
+      DB: postgres12
+      DB_PORT: 5432
+      POSTGRES_SEEDS: temporal-postgres
+      POSTGRES_USER: ${TEMPORAL_DB_USER:-temporal}
+      POSTGRES_PWD: ${TEMPORAL_DB_PASSWORD:-temporal}
+      DBNAME: temporal
+      VISIBILITY_DBNAME: temporal_visibility
+      ENABLE_ES: "false"
+      SKIP_DEFAULT_NAMESPACE_CREATION: "false"
+      DEFAULT_NAMESPACE: default
+      # 30 days. Temporal deletes CLOSED runs past retention — with a short window,
+      # completed claims vanish from listings and look like data corruption. The claims
+      # database (later phase) is the durable record; this keeps the operational views
+      # useful for a month. Applies at namespace creation only.
+      DEFAULT_NAMESPACE_RETENTION: 720h
+    depends_on:
+      temporal-postgres:
+        condition: service_healthy
+    healthcheck:
+      # Not 127.0.0.1: the frontend binds the container's own address.
+      test: ["CMD-SHELL", "temporal operator cluster health --address $$(hostname -i):7233 | grep -q SERVING"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 60s
+
+  # Optional: `docker compose --profile ui up -d temporal-ui`
+  temporal-ui:
+    profiles: [ui]
+    image: temporalio/ui:${TEMPORAL_UI_TAG:-2.53.3}
+    networks: [integration-net]
+    environment:
+      TEMPORAL_ADDRESS: temporal:7233
+      TEMPORAL_CORS_ORIGINS: http://localhost:${TEMPORAL_UI_PORT:-8233}
+    ports:
+      - "${TEMPORAL_UI_PORT:-8233}:8080"
+    depends_on:
+      temporal:
+        condition: service_healthy
+
+  claims:
+    build:
+      context: ./integrations/claims
+    image: claimflow/claims:local
+    networks: [integration-net]
+    environment:
+      JAVA_TOOL_OPTIONS: -Xmx${INTEGRATION_HEAP:-384m}
+      ICP_SERVER_URL: https://edge:9445
+      ICP_ORG_SECRET_FILE: /secrets/claims.secret
+      ICP_PROJECT: ${ICP_PROJECT:-claimflow}
+      ICP_ENVIRONMENT: ${ICP_ENVIRONMENT:-dev}
+      TEMPORAL_URL: temporal:7233
+      HEARTBEAT_INTERVAL: ${HEARTBEAT_INTERVAL:-10}
+    ports:
+      # The bill inlet (and, in later phases, the API the user portal calls). Outward-only
+      # ICP reachability is preserved: this is the host talking to the integration, which
+      # is exactly what the user portal will be.
+      - "${CLAIMS_PORT:-9080}:8080"
+    volumes:
+      - org-secrets:/secrets:ro
+    depends_on:
+      temporal:
+        condition: service_healthy
+      edge:
+        condition: service_started
