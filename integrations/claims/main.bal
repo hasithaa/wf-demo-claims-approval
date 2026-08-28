@@ -46,6 +46,10 @@ function initDb() returns postgresql:Client|error {
         bill_url VARCHAR(600),
         note VARCHAR(600),
         updated_at TIMESTAMPTZ NOT NULL DEFAULT now())`);
+    // Which channel filed the claim ('portal' or 'agent') — the portal badges AI-filed
+    // claims by it. Also added by the agent service; idempotent either way.
+    _ = check c->execute(`ALTER TABLE claims
+        ADD COLUMN IF NOT EXISTS filed_via VARCHAR(16) NOT NULL DEFAULT 'portal'`);
     return c;
 }
 
@@ -101,6 +105,7 @@ type ClaimRecord record {|
     string status;
     string? billUrl;
     string? note;
+    string filedVia = "portal";
     string updatedAt;
 |};
 
@@ -361,6 +366,12 @@ service /claims on new http:Listener(8080) {
         management:HumanTaskSummary[] all = check management:listAllHumanTasks(status = "PENDING");
         PortalTask[] mine = [];
         foreach management:HumanTaskSummary t in all {
+            // The listing spans the namespace, but completion is task-queue-scoped: only
+            // this integration's own tasks belong here. The Smart Claim agent's tasks are
+            // listed (and completed) by its own service.
+            if !t.taskName.startsWith("claimApproval") {
+                continue;
+            }
             boolean eligible = false;
             foreach string r in t.userRoles {
                 if caller.roles.indexOf(r) is int {
@@ -418,11 +429,11 @@ service /claims on new http:Listener(8080) {
         sql:ParameterizedQuery q = user is string
             ? `SELECT claim_id AS "claimId", workflow_id AS "workflowId",
                       submitted_by AS "submittedBy", amount, status, bill_url AS "billUrl",
-                      note, updated_at::text AS "updatedAt"
+                      note, filed_via AS "filedVia", updated_at::text AS "updatedAt"
                  FROM claims WHERE submitted_by = ${user} ORDER BY updated_at DESC LIMIT 100`
             : `SELECT claim_id AS "claimId", workflow_id AS "workflowId",
                       submitted_by AS "submittedBy", amount, status, bill_url AS "billUrl",
-                      note, updated_at::text AS "updatedAt"
+                      note, filed_via AS "filedVia", updated_at::text AS "updatedAt"
                  FROM claims ORDER BY updated_at DESC LIMIT 100`;
         stream<ClaimRecord, sql:Error?> rows = db->query(q);
         return from ClaimRecord c in rows select c;
@@ -432,7 +443,7 @@ service /claims on new http:Listener(8080) {
         stream<ClaimRecord, sql:Error?> rows = db->query(
             `SELECT claim_id AS "claimId", workflow_id AS "workflowId",
                     submitted_by AS "submittedBy", amount, status, bill_url AS "billUrl",
-                    note, updated_at::text AS "updatedAt"
+                    note, filed_via AS "filedVia", updated_at::text AS "updatedAt"
                FROM claims WHERE submitted_by = ${user} ORDER BY updated_at DESC LIMIT 100`);
         return from ClaimRecord c in rows select c;
     }

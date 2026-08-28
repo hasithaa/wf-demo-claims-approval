@@ -100,7 +100,7 @@ async function renderClaims() {
         <div class="row">
           <h3>${esc(c.claimId)}</h3>
           <span class="status ${esc(c.status)}">${esc(c.status.replace(/_/g, ' '))}</span>
-          ${c.workflowId === 'agent' ? '<span class="ai-badge">🤖 AI filed</span>' : ''}
+          ${c.filedVia === 'agent' ? '<span class="ai-badge">🤖 AI filed</span>' : ''}
           <span class="muted">$${esc(c.amount)}</span>
           <div class="spacer" style="flex:1"></div>
           <span class="muted">${esc((c.updatedAt || '').slice(0, 16).replace('T', ' '))}</span>
@@ -135,7 +135,7 @@ window.openClaimDetail = (claimId) => {
       <div class="row">
         <h3>${esc(c.claimId)}</h3>
         <span class="status ${esc(c.status)}">${esc(c.status.replace(/_/g, ' '))}</span>
-        ${c.workflowId === 'agent' ? '<span class="ai-badge">🤖 AI filed</span>' : ''}
+        ${c.filedVia === 'agent' ? '<span class="ai-badge">🤖 AI filed</span>' : ''}
       </div>
       <label>Amount</label><div>$${esc(c.amount)}</div>
       ${c.note ? `<label>${c.status === 'PAID' ? 'Payment reference' : 'Note'}</label><div>${esc(c.note)}</div>` : ''}
@@ -273,17 +273,36 @@ async function renderSmart() {
 window.openConversation = (id) => { activeConversation = id; refresh(); };
 window.backToAiList = () => { activeConversation = null; refresh(); };
 
+let casesById = {};
+
 async function renderConversation(id) {
-  const res = await api(`/agent/conversations/${id}`);
+  const [res, cRes] = await Promise.all([
+    api(`/agent/conversations/${id}`),
+    api(`/agent/conversations/${id}/cases`),
+  ]);
   const turns = res.ok ? await res.json() : [];
+  const cases = cRes.ok ? await cRes.json() : [];
+  casesById = Object.fromEntries(cases.map((c) => [c.caseId, c]));
   const log = turns.length === 0
-    ? '<div class="empty">Say what happened and roughly what it cost.</div>'
+    ? '<div class="empty">The agent is opening your case — it says hello in a moment.</div>'
     : turns.map((t) => `
       <div class="bubble-row">
         <div class="bubble ${t.who === 'me' ? 'me' : 'agent'} ${t.pending ? 'pending' : ''}">
-          ${t.pending ? '… working (a payment may be waiting on the accountant)' : esc(t.text || '')}
+          ${t.pending ? '… working (a document, a manager, or the accountant may be holding it)' : esc(t.text || '')}
         </div>
       </div>`).join('');
+  // Attachment cases live in the thread: an OPEN one is the agent asking for a
+  // document; submitting it fires the caseSubmitted event that resumes the run.
+  const caseCards = cases.map((c) => c.status === 'OPEN' ? `
+      <div class="case-card">
+        <div><b>📎 ${esc(c.requested)}</b> <span class="muted">case ${esc(c.caseId)} · claim ${esc(c.claimId)}</span></div>
+        <div class="row" style="margin-top:.45rem">
+          <input type="file" id="case-file-${esc(c.caseId)}" style="width:auto;flex:1">
+          <button class="primary" onclick="submitCase('${esc(c.caseId)}')">Attach &amp; resume</button>
+        </div>
+      </div>` : `
+      <div class="case-card done">📎 case ${esc(c.caseId)} — document submitted ✓</div>`).join('');
+  const draft = document.getElementById('chatmsg')?.value ?? '';
   shell(`
     <div class="toolbar">
       <button class="quiet" onclick="backToAiList()">← All AI claims</button>
@@ -291,11 +310,15 @@ async function renderConversation(id) {
     </div>
     <div class="card">
       <div id="chatlog" style="max-height:24rem;overflow:auto">${log}</div>
+      ${caseCards}
       <div class="row" style="margin-top:.8rem">
         <input type="text" id="chatmsg" placeholder="e.g. Broke my laptop on a work trip, about $1200" style="flex:1;min-width:16rem" onkeydown="if(event.key==='Enter')sendChat()">
         <button class="ai" onclick="sendChat()">Send</button>
       </div>
     </div>`);
+  const draftBox = document.getElementById('chatmsg');
+  if (draftBox && draft) draftBox.value = draft;
+  watchConversation(id, JSON.stringify([turns.map((t) => [t.id, t.pending]), cases.map((c) => [c.caseId, c.status])]));
   // The agent's concluding words never belong to a turn — read the run state and show
   // them as the closing bubble.
   const st = await api(`/agent/conversations/${id}/state`);
@@ -313,6 +336,48 @@ async function renderConversation(id) {
   if (el) el.scrollTop = el.scrollHeight;
   turns.filter((t) => t.pending && t.token).forEach((t) => pollReply(id, t.token));
 }
+
+// The agent speaks between turns (greetings, progress, new cases) through its push
+// activity — the thread has to notice without the user sending anything. A light
+// signature poll re-renders only when something actually changed.
+let chatWatch = null;
+let chatSig = '';
+function watchConversation(id, sig) {
+  chatSig = sig;
+  if (chatWatch) return;
+  chatWatch = setInterval(async () => {
+    if (tab !== 'smart' || activeConversation !== id) {
+      clearInterval(chatWatch); chatWatch = null; return;
+    }
+    try {
+      const [r1, r2] = await Promise.all([
+        api(`/agent/conversations/${id}`),
+        api(`/agent/conversations/${id}/cases`),
+      ]);
+      if (!r1.ok) return;
+      const turns = await r1.json();
+      const cases = r2.ok ? await r2.json() : [];
+      const sig2 = JSON.stringify([turns.map((t) => [t.id, t.pending]), cases.map((c) => [c.caseId, c.status])]);
+      if (sig2 !== chatSig) await renderConversation(id);
+    } catch { /* transient — next tick retries */ }
+  }, 4000);
+}
+
+window.submitCase = async (caseId) => {
+  const c = casesById[caseId];
+  const file = document.getElementById(`case-file-${caseId}`)?.files[0];
+  if (!file) return alert('Pick a file first');
+  const up = await fetch(`/api/bills/?filename=${encodeURIComponent(file.name)}&owner=${encodeURIComponent(me())}&claimId=${encodeURIComponent(c?.claimId || '')}`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token()}`, 'Content-Type': 'application/octet-stream' },
+    body: file,
+  });
+  if (!up.ok) return alert('Upload failed: ' + (await up.text()));
+  const { billId, url } = await up.json();
+  const sub = await api(`/agent/cases/${caseId}/submit`, { method: 'POST', body: JSON.stringify({ url, billId }) });
+  if (!sub.ok) return alert('Case submit failed: ' + (await sub.text()));
+  if (activeConversation) await renderConversation(activeConversation);
+};
 
 window.sendChat = async () => {
   const input = document.getElementById('chatmsg');
@@ -353,11 +418,36 @@ async function pollReply(id, turn) {
 // ── Decisions (managers and accountants) ──────────────────────────────────────
 
 async function renderTasks() {
-  const res = await api('/claims/tasks');
-  const rows = res.ok ? await res.json() : [];
-  const list = rows.length === 0
+  const [res, aRes, rRes] = await Promise.all([api('/claims/tasks'), api('/agent/tasks'), api('/agent/reviews')]);
+  // Completion is task-queue-scoped: each integration decides its own tasks, so the
+  // portal remembers which service every card came from.
+  const rows = [
+    ...(res.ok ? await res.json() : []).map((t) => ({ ...t, src: 'claims' })),
+    ...(aRes.ok ? await aRes.json() : []).map((t) => ({ ...t, src: 'agent' })),
+  ];
+  const reviews = rRes.ok ? await rRes.json() : [];
+  // The Smart Claim agent's gated payments: PRE_RUN reviews the module raised on
+  // executePayment. Deciding one here releases (or refuses) the money in-app.
+  const reviewList = reviews.map((r) => {
+    const a = r.args || {};
+    const facts = ['claimId', 'payout']
+      .filter((k) => a[k] !== undefined && a[k] !== null)
+      .map((k) => `<span class="muted">${esc(k)}: <b>${esc(a[k])}</b></span>`).join(' · ');
+    return `
+      <div class="card">
+        <h3>💸 ${esc(r.title || 'Payment release')}</h3>
+        <div class="row" style="margin-top:.3rem">${facts} <span class="ai-badge">🤖 Smart Claim</span></div>
+        <div class="row" style="margin-top:.7rem">
+          <button class="good" onclick="decideReview('${esc(r.taskId)}', 'proceed')">Release payment</button>
+          <button class="bad" onclick="decideReview('${esc(r.taskId)}', 'reject')">Refuse</button>
+          <input type="text" id="c-${esc(r.taskId)}" placeholder="Comment (optional)" style="flex:1;min-width:10rem">
+        </div>
+        <div class="muted" style="margin-top:.35rem">The agent's payment call is parked on this decision.</div>
+      </div>`;
+  }).join('');
+  const list = (rows.length === 0 && reviews.length === 0)
     ? '<div class="empty"><span class="big">✅</span>Nothing waiting on you.</div>'
-    : rows.map((t) => {
+    : reviewList + rows.map((t) => {
       const payment = t.userRoles.includes('ACCOUNTANT');
       const p = t.payload || {};
       const facts = ['claimId', 'amount', 'submittedBy', 'payee', 'validation']
@@ -365,11 +455,11 @@ async function renderTasks() {
         .map((k) => `<span class="muted">${esc(k)}: <b>${esc(p[k])}</b></span>`).join(' · ');
       const bill = p.bill && p.bill.url ? `<div class="muted">bill: <a href="${esc(p.bill.url)}" target="_blank">${esc(p.bill.url.split('/').pop())}</a></div>` : '';
       const buttons = payment
-        ? `<button class="good" onclick="decide('${esc(t.taskId)}', {approved: true, account: 'ACC-77'})">Approve payment</button>
-           <button class="bad" onclick="decide('${esc(t.taskId)}', {approved: false, comment: comment('${esc(t.taskId)}')})">Refuse</button>`
-        : `<button class="good" onclick="decide('${esc(t.taskId)}', {outcome: 'APPROVE'})">Approve</button>
-           <button class="warn" onclick="decide('${esc(t.taskId)}', {outcome: 'REQUEST_BILL', comment: comment('${esc(t.taskId)}')})">Request bill</button>
-           <button class="bad" onclick="decide('${esc(t.taskId)}', {outcome: 'REJECT', comment: comment('${esc(t.taskId)}')})">Reject</button>`;
+        ? `<button class="good" onclick="decide('${esc(t.taskId)}', {approved: true, account: 'ACC-77'}, '${t.src}')">Approve payment</button>
+           <button class="bad" onclick="decide('${esc(t.taskId)}', {approved: false, comment: comment('${esc(t.taskId)}')}, '${t.src}')">Refuse</button>`
+        : `<button class="good" onclick="decide('${esc(t.taskId)}', {outcome: 'APPROVE'}, '${t.src}')">Approve</button>
+           <button class="warn" onclick="decide('${esc(t.taskId)}', {outcome: 'REQUEST_BILL', comment: comment('${esc(t.taskId)}')}, '${t.src}')">Request bill</button>
+           <button class="bad" onclick="decide('${esc(t.taskId)}', {outcome: 'REJECT', comment: comment('${esc(t.taskId)}')}, '${t.src}')">Reject</button>`;
       return `
       <div class="card">
         <h3>${esc(t.title)}</h3>
@@ -386,10 +476,20 @@ async function renderTasks() {
 
 window.comment = (id) => document.getElementById(`c-${id}`)?.value || undefined;
 
-window.decide = async (taskId, result) => {
+window.decideReview = async (taskId, action) => {
+  const feedback = window.comment(taskId);
+  const res = await api(`/agent/reviews/${taskId}/decide`, {
+    method: 'POST', body: JSON.stringify(feedback ? { action, feedback } : { action }),
+  });
+  if (!res.ok) alert('Could not decide the payment: ' + (await res.text()));
+  refresh();
+};
+
+window.decide = async (taskId, result, src = 'claims') => {
   const c = window.comment(taskId);
   if (c && result.comment === undefined) result.comment = c;
-  const res = await api(`/claims/tasks/${taskId}/complete`, { method: 'POST', body: JSON.stringify({ result }) });
+  const base = src === 'agent' ? '/agent/tasks' : '/claims/tasks';
+  const res = await api(`${base}/${taskId}/complete`, { method: 'POST', body: JSON.stringify({ result }) });
   if (!res.ok) alert('Could not complete the task: ' + (await res.text()));
   refresh();
 };

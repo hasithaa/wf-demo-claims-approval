@@ -55,20 +55,36 @@ the ICP side), and their groups become the roles the tasks are gated on.
 
 ## Act 2 — the AI claim (durable agent)
 
-1. **bob** signs in → **🤖 Submit with AI agent** (or the AI claims tab → New AI claim).
-2. Type: `I broke my laptop on a work trip last week, it cost about $1200 to replace`.
-   The agent answers in its own words, files the claim (watch **My claims** — the card
-   carries an *🤖 AI filed* badge), and estimates the payout.
-3. Reply `yes, pay it please` → the bubble holds on
-   *"working (a payment may be waiting on the accountant)"*. **This is the demo's
-   point**: the agent decided to pay, and the platform stopped it — `executePayment`
-   is declared `requiresApproval: true` for role `ACCOUNTANT`.
-4. **john** opens the ICP → claims-agent → Human Tasks → the **approval gate**
-   (trigger: Approval gate) → Proceed.
-5. bob's bubble resolves: the agent confirms the payment in its own words.
-6. The persistence beat: **sign bob out, sign back in** → AI claims → the conversation
-   is intact, every turn — conversations and their correlation tokens live in the
+The agent runs the whole case under three pre-approval rules it enforces itself:
+over **$1000** a bill is required, over **$3000** a manager signs off, and the payment
+is **always** gated on an accountant. Small claims sail straight through.
+
+1. **bob** signs in → **🤖 Submit with AI agent**. Say nothing: **the agent speaks
+   first** — a greeting asking what happened, pushed through its one-way chat activity
+   before any user turn exists.
+2. Type: `Crashed my rental car on a client visit, about $4200 in damages`. The agent
+   files the claim (the reply names the claim id; **My claims** shows the card with the
+   *🤖 AI filed* badge), validates it, and — over $1000 with no receipt — opens an
+   **attachment case** right in the thread: a dashed card asking for the bill.
+   *Say: the case carries the workflow instance ID — that correlation is how the
+   uploaded file finds its way back into this exact run.*
+3. Pick any file → **Attach & resume**. The submission fires an event into the parked
+   agent; it re-validates and — over $3000 — raises a **manager sign-off** task.
+4. **jane** → **Decisions** → the *Manager sign-off (Smart Claim)* card, claim facts
+   attached → **Approve**.
+5. Watch bob's chat: the agent pushes *"approved … waiting for payment processing"*,
+   rings bob's bell, and notifies the accountants — then reaches for `executePayment`,
+   where the platform stops it: `requiresApproval: true` for role `ACCOUNTANT`.
+6. **john** → **Decisions** → the 💸 **Release payment** card (the in-app face of the
+   PRE_RUN review; the ICP shows the same gate) → **Release payment**.
+7. bob's chat concludes in the agent's words: the claim **is paid**, and the claim card
+   reads `PAID`.
+8. The persistence beat: **sign bob out, sign back in** → AI claims → the conversation
+   is intact, every turn — conversations, cases, and correlation tokens live in the
    application database, not the browser.
+
+Try it small, too: a fresh AI claim for `$800` skips the case and the sign-off — the
+agent validates, approves, notifies, and parks only on john's release.
 
 ## The operations view (run alongside either act)
 
