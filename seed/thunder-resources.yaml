@@ -136,3 +136,46 @@ inboundAuthConfig:
           - family_name
         email:
           - email
+---
+resource_type: application
+id: app-claimflow-portal
+name: Claimflow Portal
+type: browser
+ouId: 01900000-0000-7000-8000-000000000001
+authFlowHandle: default-flow
+inboundAuthConfig:
+  - type: oauth2
+    config:
+      clientId: claimflow-portal
+      redirectUris:
+        - "${PORTAL_REDIRECT_URI}"
+      grantTypes:
+        - authorization_code
+        - refresh_token
+      responseTypes:
+        - code
+      tokenEndpointAuthMethod: none
+      publicClient: true
+      pkceRequired: true
+      token:
+        accessToken:
+          userConfig:
+            attributes:
+              - username
+              - email
+              - given_name
+              - groups
+        idToken:
+          userAttributes:
+            - username
+            - email
+            - given_name
+            - groups
+      scopeClaims:
+        groups:
+          - groups
+        profile:
+          - username
+          - given_name
+        email:
+          - email

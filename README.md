@@ -19,6 +19,7 @@ Then open the admin console — note the **https**:
 
 | What | Where | Sign in |
 |---|---|---|
+| **Claimflow portal** (user portal) | http://localhost:9090 | `alice`/`alice12345` or `bob`/`bob12345` to submit; `jane`/`john` see a Decisions tab |
 | ICP console (admin portal) | https://localhost:9664 | **Sign in with SSO** as `jane`/`jane12345` (manager) or `john`/`john12345` (accountant); `admin`/`admin` stays local |
 | Claims API / bill store / inbox | http://localhost:9080 · 9081 · 9082 | — |
 | Thunder console (identity admin) | https://localhost:8090/console | `admin` / `admin12345` |
@@ -42,10 +43,27 @@ are gated on those role names.
 | john | john12345 | `accountants` → `ACCOUNTANT` | Releases payments |
 | alice, bob | alice12345, bob12345 | `users` (portal only, later phase) | Submit claims |
 
-## Walk the claim through (current phase)
+## The demo, as intended
 
-Until the user portal lands, the ICP console plays every part — or sign in with SSO as
-jane for the reviews and john for the payment, which is the demo's real story:
+Three browser sessions on http://localhost:9090:
+
+1. **alice** signs in, submits a claim (no bill) — the bell confirms it.
+2. **jane** (Decisions tab) reviews it: **Request bill**, with a comment.
+3. **alice** sees `BILL REQUESTED`, picks a file, *Upload & attach bill* — the bill store
+   keeps the file and fires the event; the claim wakes.
+4. **jane** sees the review again, now with the bill link. **Approve**.
+5. **john** approves the payment. Only then does the money move.
+6. **alice**'s claim reads `PAID`, with the bill and the payment reference; her inbox
+   tells the story. The ICP console shows the same tasks with full forms, the execution
+   flow, and the recovery tools — the admin's view of exactly the same process.
+
+The portal is deliberately small: decision buttons and a comment box — the fast lane.
+Deep context lives in the console.
+
+## Walk the claim through (console-only variant)
+
+Everything also works from the ICP console alone — sign in with SSO as
+jane for the reviews and john for the payment:
 
 1. **Workflows → claims → Start workflow** → `claimApproval` with
    `{"id": "CLM-1001", "amount": 2400, "submittedBy": "alice"}`.
@@ -107,18 +125,20 @@ db/initdb/       Postgres first-boot scripts (apply the zip's own schema)
 edge/            the gateway config
 seed/            first-boot secret minting
 integrations/
-  claims/         the claim-approval workflow integration (+ claims_db record, bill inlet)
+  claims/         the claim workflow + the portal API (submit, my claims, tasks, decide)
   bill-store/     bill upload/download with file state (its own DB + volume)
   notifications/  the per-user inbox (its own DB)
+webapp/           the Claimflow portal: static SPA (no build step) + same-origin proxy
 ```
 
 ## Roadmap
 
-Phases 1–3 of the Claimflow proposal are in place: the claim process, the bill store,
-the notification inbox, the claims database as the durable record, and Thunder SSO with
-group→role mappings. Coming next: the user portal (classic forms) and a chat-based
-Smart Claim portal driving a durable agent whose payment tool needs accountant
-pre-approval.
+Phases 1–4 of the Claimflow proposal are in place: the claim process, the bill store,
+the notification inbox, the claims database as the durable record, Thunder SSO with
+group→role mappings, and the Claimflow user portal (OIDC PKCE sign-in, submit/upload/
+attach, inbox, and a limited Decisions view that completes the same tasks the console
+does — the module is the arbiter either way). Coming next: the chat-based Smart Claim
+portal driving a durable agent whose payment tool needs accountant pre-approval.
 
 Demo-only notes: `seed/thunder-tls/` holds a committed self-signed TLS pair whose SANs
 cover both `localhost` (browser) and `thunder` (the ICP's server-side JWKS fetch) — do

@@ -12,6 +12,7 @@ set -euo pipefail
 : "${ICP_ENVIRONMENT:=dev}"
 : "${TEMPORAL_URL:=temporal:7233}"
 : "${HEARTBEAT_INTERVAL:=10}"
+: "${THUNDER_PUBLIC_URL:=https://localhost:8090}"
 : "${ICP_ORG_SECRET_FILE:=}"
 
 if [ -z "${ICP_ORG_SECRET:-}" ] && [ -n "${ICP_ORG_SECRET_FILE}" ]; then
@@ -31,6 +32,7 @@ sed -e "s|@ICP_SERVER_URL@|${ICP_SERVER_URL}|g" \
     -e "s|@ICP_ENVIRONMENT@|${ICP_ENVIRONMENT}|g" \
     -e "s|@TEMPORAL_URL@|${TEMPORAL_URL}|g" \
     -e "s|@HEARTBEAT_INTERVAL@|${HEARTBEAT_INTERVAL}|g" \
+    -e "s|@THUNDER_PUBLIC_URL@|${THUNDER_PUBLIC_URL}|g" \
     /app/Config.toml.tmpl > /app/Config.toml
 
 echo "[entrypoint] $(hostname): temporal=${TEMPORAL_URL} icp=${ICP_SERVER_URL} project=${ICP_PROJECT}"

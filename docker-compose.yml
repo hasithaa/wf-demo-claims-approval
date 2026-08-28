@@ -105,7 +105,9 @@ services:
   # which generates key material into the persisted volume, then serves.
   thunder:
     image: ghcr.io/thunder-id/thunderid:1.0.0
-    networks: [icp-net]
+    # Identity is shared infrastructure: the ICP validates ID tokens on icp-net, and the
+    # integrations validate portal tokens on integration-net.
+    networks: [icp-net, integration-net]
     entrypoint: ["sh", "-c"]
     # Render the demo's declarative identity (users, groups, the ICP SSO client) from its
     # template — ${VAR} substitution is not applied to a startup resources file — then run
@@ -114,6 +116,7 @@ services:
       - |
         sed -e "s|\$${ICP_SSO_CLIENT_SECRET}|$${ICP_SSO_CLIENT_SECRET}|g" \
             -e "s|\$${ICP_SSO_REDIRECT_URI}|$${ICP_SSO_REDIRECT_URI}|g" \
+            -e "s|\$${PORTAL_REDIRECT_URI}|$${PORTAL_REDIRECT_URI}|g" \
             /opt/claimflow/thunder-resources.yaml > /opt/thunderid/claimflow.yaml
         [ -f config/certs/crypto.key ] || ./setup.sh
         exec ./start.sh /opt/thunderid/claimflow.yaml
@@ -123,6 +126,7 @@ services:
       DIRECT_AUTH_SECRET: ${THUNDER_DIRECT_AUTH_SECRET:-claimflow-direct-secret}
       ICP_SSO_CLIENT_SECRET: ${ICP_SSO_CLIENT_SECRET:-icp-console-secret}
       ICP_SSO_REDIRECT_URI: ${ICP_PUBLIC_BASE_URL:-https://localhost:9664}/sso/callback
+      PORTAL_REDIRECT_URI: ${PORTAL_PUBLIC_URL:-http://localhost:9090}/callback
     volumes:
       # Both must persist together: setup.sh runs once (guarded on the crypto key in
       # config/) and seeds the bootstrap resources into the sqlite databases — a recreate
@@ -138,6 +142,21 @@ services:
       - ./seed/thunder-tls/server.key:/opt/thunderid/config/certs/server.key:ro
     ports:
       - "${THUNDER_PORT:-8090}:8090"
+
+  # The Claimflow user portal: a static single-page app plus a same-origin proxy to the
+  # integration APIs and to Thunder's token endpoint — so the browser never fights CORS
+  # and the integration ports never need to be public for the portal to work.
+  webapp:
+    image: nginx:1.27-alpine
+    networks: [icp-net, integration-net]
+    volumes:
+      - ./webapp/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./webapp/public:/usr/share/nginx/html:ro
+    ports:
+      - "${PORTAL_PORT:-9090}:8080"
+    depends_on:
+      claims:
+        condition: service_started
 
   # ── The only thing on both networks ──────────────────────────────────────────
   edge:
@@ -245,6 +264,7 @@ services:
       ICP_ENVIRONMENT: ${ICP_ENVIRONMENT:-dev}
       TEMPORAL_URL: temporal:7233
       HEARTBEAT_INTERVAL: ${HEARTBEAT_INTERVAL:-10}
+      THUNDER_PUBLIC_URL: ${THUNDER_PUBLIC_URL:-https://localhost:8090}
     ports:
       # The bill inlet (and, in later phases, the API the user portal calls). Outward-only
       # ICP reachability is preserved: this is the host talking to the integration, which
