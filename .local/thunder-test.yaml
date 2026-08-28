@@ -1,0 +1,136 @@
+# Claimflow's identity, declared: the cast, their groups, and the ICP's SSO client.
+#
+# Thunder loads this multi-document YAML at startup (each document tagged by
+# resource_type). Declarative resources are read-only at runtime — the demo's identity
+# is versioned here, not clicked together. ${VAR} placeholders are substituted from the
+# environment at load time.
+#
+# The groups matter more than the users: the ICP maps the token's `groups` claim (group
+# NAMES) to its roles — managers → MANAGER, accountants → ACCOUNTANT — and human tasks
+# are gated on those role names.
+
+resource_type: user
+id: user-jane
+type: Person
+ouId: 01900000-0000-7000-8000-000000000001
+attributes:
+  username: jane
+  email: jane@claimflow.dev
+  given_name: Jane
+  family_name: Manager
+credentials:
+  password: "jane12345"
+---
+resource_type: user
+id: user-john
+type: Person
+ouId: 01900000-0000-7000-8000-000000000001
+attributes:
+  username: john
+  email: john@claimflow.dev
+  given_name: John
+  family_name: Accountant
+credentials:
+  password: "john12345"
+---
+resource_type: user
+id: user-alice
+type: Person
+ouId: 01900000-0000-7000-8000-000000000001
+attributes:
+  username: alice
+  email: alice@claimflow.dev
+  given_name: Alice
+  family_name: Claimant
+credentials:
+  password: "alice12345"
+---
+resource_type: user
+id: user-bob
+type: Person
+ouId: 01900000-0000-7000-8000-000000000001
+attributes:
+  username: bob
+  email: bob@claimflow.dev
+  given_name: Bob
+  family_name: Claimant
+credentials:
+  password: "bob12345"
+---
+resource_type: group
+id: group-managers
+name: managers
+description: May decide any Claimflow human task
+ouId: 01900000-0000-7000-8000-000000000001
+members:
+  - id: user-jane
+    type: user
+---
+resource_type: group
+id: group-accountants
+name: accountants
+description: May release Claimflow payments
+ouId: 01900000-0000-7000-8000-000000000001
+members:
+  - id: user-john
+    type: user
+---
+resource_type: group
+id: group-users
+name: users
+description: Submit claims and upload bills in the portal
+ouId: 01900000-0000-7000-8000-000000000001
+members:
+  - id: user-alice
+    type: user
+  - id: user-bob
+    type: user
+---
+resource_type: application
+id: app-icp-console
+name: ICP Console SSO
+type: fullstack
+ouId: 01900000-0000-7000-8000-000000000001
+inboundAuthConfig:
+  - type: oauth2
+    config:
+      clientId: icp-console
+      clientSecret: "icpsecret123"
+      redirectUris:
+        - "https://localhost:9764/auth/sso/callback"
+      grantTypes:
+        - authorization_code
+        - refresh_token
+      responseTypes:
+        - code
+      tokenEndpointAuthMethod: client_secret_basic
+      pkceRequired: false
+      publicClient: false
+      # The groups claim is opt-in twice: listed as a token attribute, and released
+      # through a scope mapping. Both tokens carry it so the ICP can read it wherever
+      # it looks.
+      token:
+        accessToken:
+          userConfig:
+            attributes:
+              - username
+              - email
+              - given_name
+              - family_name
+              - groups
+        idToken:
+          userAttributes:
+            - username
+            - email
+            - given_name
+            - family_name
+            - groups
+      scopeClaims:
+        groups:
+          - groups
+        profile:
+          - username
+          - given_name
+          - family_name
+        email:
+          - email

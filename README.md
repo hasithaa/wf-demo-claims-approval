@@ -19,17 +19,33 @@ Then open the admin console — note the **https**:
 
 | What | Where | Sign in |
 |---|---|---|
-| ICP console (admin portal) | https://localhost:9664 | `admin` / `admin` |
+| ICP console (admin portal) | https://localhost:9664 | **Sign in with SSO** as `jane`/`jane12345` (manager) or `john`/`john12345` (accountant); `admin`/`admin` stays local |
 | Claims API / bill store / inbox | http://localhost:9080 · 9081 · 9082 | — |
+| Thunder console (identity admin) | https://localhost:8090/console | `admin` / `admin12345` |
 | Thunder (identity, later phases) | https://localhost:8090/console | `admin` / `admin12345` |
 | Temporal UI (optional) | `docker compose --profile ui up -d temporal-ui` → http://localhost:8233 | — |
 
 The browser will warn about the self-signed certificate; proceed. Opening plain
 `http://localhost:9664` answers `400 The plain HTTP request was sent to HTTPS port`.
 
+## The cast — one user store, mapped to roles
+
+Thunder is the single identity provider; its declarative seed
+([`seed/thunder-resources.yaml`](seed/thunder-resources.yaml)) creates the users, the
+groups, and the ICP's OAuth client. On SSO login the ICP reads the token's `groups`
+claim and maps group names to its roles (`db/initdb/40-sso-mappings.sql`); human tasks
+are gated on those role names.
+
+| User | Password | Thunder group → ICP role | Plays |
+|---|---|---|---|
+| jane | jane12345 | `managers` → `MANAGER` | Decides claim reviews |
+| john | john12345 | `accountants` → `ACCOUNTANT` | Releases payments |
+| alice, bob | alice12345, bob12345 | `users` (portal only, later phase) | Submit claims |
+
 ## Walk the claim through (current phase)
 
-Until the user portal lands, the ICP console plays every part:
+Until the user portal lands, the ICP console plays every part — or sign in with SSO as
+jane for the reviews and john for the payment, which is the demo's real story:
 
 1. **Workflows → claims → Start workflow** → `claimApproval` with
    `{"id": "CLM-1001", "amount": 2400, "submittedBy": "alice"}`.
@@ -70,7 +86,8 @@ bill-store    ──► bills_db + a file volume; forwards attached bills to cla
 notifications ──► notifications_db; the user-facing inbox
         └──── all three heartbeat out to the ICP through the edge
 appdb   ── one Postgres for the integration side, one database per service
-thunder ── identity provider (OIDC), the single user store for later phases
+thunder ── identity provider (OIDC): the single user store, declaratively seeded;
+           the ICP validates its ID tokens (JWKS) and syncs groups→roles on every login
 seed    ── one-shot: mints the integrations' org secrets against the running ICP
 ```
 
@@ -97,8 +114,13 @@ integrations/
 
 ## Roadmap
 
-Phases 1–2 of the Claimflow proposal are in place: the claim process, the bill store,
-the notification inbox, and the claims database as the durable record. Coming next:
-Thunder SSO with `MANAGER`/`ACCOUNTANT` group mappings (Jane/John/Alice/Bob), the user
-portal (classic forms), and a chat-based Smart Claim portal driving a durable agent
-whose payment tool needs accountant pre-approval.
+Phases 1–3 of the Claimflow proposal are in place: the claim process, the bill store,
+the notification inbox, the claims database as the durable record, and Thunder SSO with
+group→role mappings. Coming next: the user portal (classic forms) and a chat-based
+Smart Claim portal driving a durable agent whose payment tool needs accountant
+pre-approval.
+
+Demo-only notes: `seed/thunder-tls/` holds a committed self-signed TLS pair whose SANs
+cover both `localhost` (browser) and `thunder` (the ICP's server-side JWKS fetch) — do
+not reuse it anywhere real. Thunder persists two volumes (`config` and `database`);
+they must live and die together, or the server boots half-initialized.

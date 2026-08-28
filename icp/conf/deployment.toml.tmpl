@@ -11,6 +11,25 @@ runtimeListenerPort = 9445
 # its own links from this, so pointing it at the container name would break sign-in.
 publicBaseUrl = "@ICP_PUBLIC_BASE_URL@"
 
+# ── Single sign-on against Thunder (the demo's one user store) ────────────────
+# Top-level keys on purpose: these are root-level configurables, and a [section]
+# header above them would orphan them. The issuer must match the ID token's `iss`
+# exactly — that is Thunder's public_url, which the BROWSER also uses; the token and
+# JWKS endpoints are what the ICP server itself dials, so they use the container name.
+ssoEnabled = @SSO_ENABLED@
+ssoIssuer = "@THUNDER_PUBLIC_URL@"
+ssoAuthorizationEndpoint = "@THUNDER_PUBLIC_URL@/oauth2/authorize"
+ssoTokenEndpoint = "@THUNDER_INTERNAL_URL@/oauth2/token"
+ssoLogoutEndpoint = "@THUNDER_PUBLIC_URL@/oauth2/logout"
+ssoJwksUrl = "@THUNDER_INTERNAL_URL@/oauth2/jwks"
+ssoClientId = "icp-console"
+ssoClientSecret = "@ICP_SSO_CLIENT_SECRET@"
+ssoRedirectUri = "@ICP_PUBLIC_BASE_URL@/sso/callback"
+ssoUsernameClaim = "email"
+ssoScopes = ["openid", "email", "profile", "groups"]
+# Thunder serves a self-signed certificate inside the compose network.
+ssoAllowInsecureTLS = true
+
 logLevel = "INFO"
 enableAuditLogging = true
 enableMetrics = true

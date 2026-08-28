@@ -20,6 +20,7 @@ volumes:
   appdb-data:
   bills-data:
   thunder-data:
+  thunder-db:
   icp-logs:
   # The seed service writes minted org secrets here; integrations read them.
   org-secrets:
@@ -60,6 +61,12 @@ services:
       ICP_DB_USER: ${ICP_DB_USER:-icp_user}
       ICP_DB_PASSWORD: ${ICP_DB_PASSWORD:-icp_password}
       ICP_PUBLIC_BASE_URL: ${ICP_PUBLIC_BASE_URL:-https://localhost:9664}
+      # Single sign-on against Thunder. The issuer/authorize URL is what the BROWSER
+      # sees (published port); token/JWKS are dialed by this server (container name).
+      SSO_ENABLED: ${SSO_ENABLED:-true}
+      THUNDER_PUBLIC_URL: ${THUNDER_PUBLIC_URL:-https://localhost:8090}
+      THUNDER_INTERNAL_URL: https://thunder:8090
+      ICP_SSO_CLIENT_SECRET: ${ICP_SSO_CLIENT_SECRET:-icp-console-secret}
     volumes:
       - icp-logs:/opt/icp/logs
     depends_on:
@@ -100,13 +107,35 @@ services:
     image: ghcr.io/thunder-id/thunderid:1.0.0
     networks: [icp-net]
     entrypoint: ["sh", "-c"]
-    command: ['[ -f config/certs/crypto.key ] || ./setup.sh; exec ./start.sh']
+    # Render the demo's declarative identity (users, groups, the ICP SSO client) from its
+    # template — ${VAR} substitution is not applied to a startup resources file — then run
+    # first-boot setup once and serve with that identity loaded.
+    command:
+      - |
+        sed -e "s|\$${ICP_SSO_CLIENT_SECRET}|$${ICP_SSO_CLIENT_SECRET}|g" \
+            -e "s|\$${ICP_SSO_REDIRECT_URI}|$${ICP_SSO_REDIRECT_URI}|g" \
+            /opt/claimflow/thunder-resources.yaml > /opt/thunderid/claimflow.yaml
+        [ -f config/certs/crypto.key ] || ./setup.sh
+        exec ./start.sh /opt/thunderid/claimflow.yaml
     environment:
       ADMIN_USERNAME: ${THUNDER_ADMIN_USER:-admin}
       ADMIN_PASSWORD: ${THUNDER_ADMIN_PASSWORD:-admin12345}
       DIRECT_AUTH_SECRET: ${THUNDER_DIRECT_AUTH_SECRET:-claimflow-direct-secret}
+      ICP_SSO_CLIENT_SECRET: ${ICP_SSO_CLIENT_SECRET:-icp-console-secret}
+      ICP_SSO_REDIRECT_URI: ${ICP_PUBLIC_BASE_URL:-https://localhost:9664}/sso/callback
     volumes:
+      # Both must persist together: setup.sh runs once (guarded on the crypto key in
+      # config/) and seeds the bootstrap resources into the sqlite databases — a recreate
+      # that kept the key but lost the databases boots half-initialized and fails app
+      # validation with a misleading "malformed" error.
       - thunder-data:/opt/thunderid/config
+      - thunder-db:/opt/thunderid/database
+      - ./seed/thunder-resources.yaml:/opt/claimflow/thunder-resources.yaml:ro
+      # A demo-only TLS pair whose SANs cover both names Thunder answers to — `localhost`
+      # for the browser and `thunder` for the ICP's server-side JWKS fetch, whose client
+      # verifies hostnames even in insecure mode. setup.sh keeps existing key material.
+      - ./seed/thunder-tls/server.cert:/opt/thunderid/config/certs/server.cert:ro
+      - ./seed/thunder-tls/server.key:/opt/thunderid/config/certs/server.key:ro
     ports:
       - "${THUNDER_PORT:-8090}:8090"
 
