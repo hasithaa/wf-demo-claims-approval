@@ -276,7 +276,13 @@ type ScriptState record {|
     map<json>? validation = ();
     boolean validationStale = false;
     string? caseId = ();
+    boolean awaitingCaseSubmit = false;
     string? managerOutcome = ();
+    string? managerComment = ();
+    boolean managerWantsBill = false;
+    boolean rejectedChatSent = false;
+    boolean terminal = false;
+    boolean userAfterTerminal = false;
     string? estimate = ();
     string lastStatus = "";
     boolean userNotified = false;
@@ -303,8 +309,18 @@ isolated function scanScript(json[] messages) returns ScriptState {
                 s.lastUserText = content;
                 if content.startsWith("[case-submitted]") {
                     // The attachment case came back: whatever was validated before is
-                    // stale — the document is on the claim now.
+                    // stale — the document is on the claim now. A submission also
+                    // satisfies a manager's document request, so the sign-off is asked
+                    // again with the new document on record.
                     s.validationStale = true;
+                    s.awaitingCaseSubmit = false;
+                    if s.managerWantsBill {
+                        s.managerWantsBill = false;
+                        s.managerOutcome = ();
+                    }
+                } else if s.terminal {
+                    // The case is settled and the user spoke again: closing etiquette.
+                    s.userAfterTerminal = true;
                 }
             }
             continue;
@@ -327,6 +343,8 @@ isolated function scanScript(json[] messages) returns ScriptState {
                 string args = fn["arguments"] is string ? <string>fn["arguments"] : "";
                 if args.includes("[approved]") {
                     s.approvalChatSent = true;
+                } else if args.includes("[rejected]") {
+                    s.rejectedChatSent = true;
                 } else {
                     s.greeted = true;
                 }
@@ -353,20 +371,27 @@ isolated function scanScript(json[] messages) returns ScriptState {
             }
             "createAttachmentCase" => {
                 s.caseId = content.trim();
+                s.awaitingCaseSubmit = true;
             }
             "managerApproval" => {
                 json|error parsed = content.fromJsonString();
                 if parsed is map<json> && parsed["outcome"] is string {
                     s.managerOutcome = <string>parsed["outcome"];
+                    json comment = parsed["comment"];
+                    s.managerComment = comment is string && comment != "" ? comment : ();
                 } else {
                     s.managerOutcome = content.includes("REJECT") ? "REJECT" : "APPROVE";
                 }
+                s.managerWantsBill = s.managerOutcome == "REQUEST_BILL";
             }
             "estimatePayout" => {
                 s.estimate = content.trim();
             }
             "updateClaimStatus" => {
                 s.lastStatus = content.trim();
+                if s.lastStatus == "REJECTED" {
+                    s.terminal = true;
+                }
             }
             "notifyUser" => {
                 s.userNotified = true;
@@ -376,6 +401,7 @@ isolated function scanScript(json[] messages) returns ScriptState {
             }
             "executePayment" => {
                 s.paymentRef = content.trim();
+                s.terminal = true;
             }
         }
     }
@@ -384,6 +410,22 @@ isolated function scanScript(json[] messages) returns ScriptState {
 
 isolated function callTool(string name, map<json> args) returns map<json> {
     return {function_call: {name: name, arguments: args.toJsonString()}};
+}
+
+// Whether a post-settlement reply means "we're done here" — the cue to end the
+// conversation (and with it the workflow) instead of leaving it hanging open.
+isolated function isDone(string text) returns boolean {
+    string t = text.trim().toLowerAscii();
+    if t == "no" || t.startsWith("no ") || t.startsWith("no,") || t.startsWith("no.") {
+        return true;
+    }
+    foreach string done in ["nothing", "nope", "bye", "thanks", "thank you",
+            "that's all", "all good", "we're done", "i'm good", "im good", "done"] {
+        if t.includes(done) {
+            return true;
+        }
+    }
+    return false;
 }
 
 # The scripted brain: one deterministic ladder through the whole case — greet, gather,
@@ -402,9 +444,21 @@ isolated function scriptedTurn(json[] messages) returns map<json> {
     }
     ScriptState s = scanScript(messages);
 
+    if s.userAfterTerminal {
+        // The case is settled and the user spoke again: answer, offer, and close the
+        // workflow when they are done.
+        if isDone(s.lastUserText) {
+            return callTool("endConversation", {farewell:
+                "Happy to help — closing this claim conversation. Start a new AI claim anytime."});
+        }
+        string outcome = s.paymentRef is string
+            ? string `${s.claimId ?: "The claim"} is paid — reference ${s.paymentRef ?: ""}.`
+            : string `${s.claimId ?: "The claim"} was rejected; nothing was paid.`;
+        return {content: outcome + " Is there anything else I can help you with?"};
+    }
     if s.paymentRef is string {
         string claim = s.claimId ?: "your claim";
-        return {content: string `All done — ${claim} is paid. Reference ${s.paymentRef ?: ""}.`};
+        return {content: string `All done — ${claim} is paid. Reference ${s.paymentRef ?: ""}. Is there anything else I can help you with?`};
     }
     string? wfId = s.workflowId;
     if wfId is () {
@@ -445,14 +499,24 @@ isolated function scriptedTurn(json[] messages) returns map<json> {
         amount = <decimal>vAmount;
     }
     boolean billShort = validation["billRequired"] == true && validation["billAttached"] != true;
-    boolean billChase = billShort || (s.managerOutcome == "REQUEST_BILL" && validation["billAttached"] != true);
-    if billChase {
-        if s.caseId is () {
+    if billShort || s.managerWantsBill {
+        // A manager's REQUEST_BILL opens a fresh case even when a document is already
+        // attached: they looked at it and asked for another. The submission clears
+        // managerWantsBill and the sign-off is asked again (see the scan).
+        if !s.awaitingCaseSubmit {
+            string requested = s.managerWantsBill
+                ? "the document the manager asked for"
+                    + ((s.managerComment is string) ? ": " + (s.managerComment ?: "") : "")
+                : "the bill or receipt for this claim";
             return callTool("createAttachmentCase",
-                {workflowId: wfId, claimId: claimId, requested: "the bill or receipt for this claim"});
+                {workflowId: wfId, claimId: claimId, requested: requested});
         }
         // Answer the turn: the case submission comes back as the next chat message.
-        return {content: string `I filed ${claimId} — but it is over $1000, so I need the bill or receipt. Attach it to case ${s.caseId ?: ""} right below this chat and I will pick the claim back up.`};
+        string why = s.managerWantsBill
+            ? "The manager asked for another document"
+                + ((s.managerComment is string) ? " (" + (s.managerComment ?: "") + ")" : "") + "."
+            : string `I filed ${claimId} — but it is over $1000, so I need the bill or receipt.`;
+        return {content: why + string ` Attach it to case ${s.caseId ?: ""} right below this chat and I will pick the claim back up.`};
     }
     if validation["managerApprovalRequired"] == true && s.managerOutcome is () {
         return callTool("managerApproval", {claimId: claimId, amount: amount,
@@ -460,11 +524,18 @@ isolated function scriptedTurn(json[] messages) returns map<json> {
             validation: string `Over the $3000 sign-off threshold; bill attached: ${validation["billAttached"] == true}`});
     }
     if s.managerOutcome == "REJECT" {
+        string note = "The manager rejected the claim"
+            + ((s.managerComment is string) ? ": " + (s.managerComment ?: "") : "");
+        if !s.rejectedChatSent {
+            // The rejection reaches the chat immediately, mid-turn, reason included.
+            return callTool("sendChatMessage", {workflowId: wfId, message:
+                string `[rejected] ${note} (${claimId}). Nothing will be paid.`});
+        }
         if s.lastStatus != "REJECTED" {
             return callTool("updateClaimStatus",
-                {claimId: claimId, status: "REJECTED", note: "The manager rejected the claim"});
+                {claimId: claimId, status: "REJECTED", note: note});
         }
-        return {content: string `I'm sorry — the manager rejected ${claimId}. Nothing was paid.`};
+        return {content: string `I'm sorry — ${claimId} was rejected. ${note}. Is there anything else I can help you with?`};
     }
     if s.estimate is () {
         return callTool("estimatePayout", {claimId: claimId, amount: amount});
@@ -531,13 +602,22 @@ The case, step by step:
    validate again and continue the case from step 4.
 6. MANAGER SIGN-OFF: when required, call the managerApproval task with the claim facts
    (claimId, amount, submittedBy, description, validation) and wait for the outcome.
-   APPROVE means continue; REQUEST_BILL means chase the bill (step 5) and ask again;
-   REJECT means updateClaimStatus REJECTED, tell the user why, and stop.
+   APPROVE means continue. REQUEST_BILL means the manager wants another or better
+   document: open a NEW attachment case (step 5), tell the user what the manager asked
+   for (their comment), and after the submission validate and ask the manager AGAIN.
+   REJECT means: FIRST sendChatMessage the rejection with the manager's comment so the
+   user sees it immediately, then updateClaimStatus REJECTED, then reply stating the
+   rejection and asking whether there is anything else you can help with.
 7. APPROVED: estimatePayout, updateClaimStatus APPROVED, then tell the user (both
    sendChatMessage and notifyUser) the claim is approved and waiting for payment
    processing, and notifyRole ACCOUNTANT that a payment awaits release.
 8. PAY with executePayment. It is gated: the call parks until an accountant releases it
-   in their portal. When it returns, reply with the payment reference.
+   in their portal. When it returns, reply with the payment reference and ask whether
+   there is anything else you can help with.
+9. CLOSE. Once the claim is settled — PAID or REJECTED — the case is over: every later
+   reply answers briefly and offers to help with anything else. When the user indicates
+   they are done (no, nothing, thanks, bye), call endConversation with a short farewell
+   — that completes the workflow. Never leave a settled conversation hanging open.
 Be brief and concrete in every message.`
     },
     model: check selectModel(),
@@ -829,6 +909,12 @@ service /agent on new http:Listener(8080) {
         string|error outcome = claimAgent.getResult(id);
         if outcome is workflow:AgentBusyError {
             return {running: true};
+        }
+        // The run has concluded either way — keep the durable record in step.
+        sql:ExecutionResult|sql:Error closed = db->execute(`UPDATE agent_conversations
+            SET status = 'CLOSED' WHERE conversation_id = ${id} AND status <> 'CLOSED'`);
+        if closed is sql:Error {
+            log:printWarn("could not close the conversation record", 'error = closed);
         }
         if outcome is error {
             return {running: false, failed: true};

@@ -78,7 +78,14 @@ is **always** gated on an accountant. Small claims sail straight through.
 6. **john** → **Decisions** → the 💸 **Release payment** card (the in-app face of the
    PRE_RUN review; the ICP shows the same gate) → **Release payment**.
 7. bob's chat concludes in the agent's words: the claim **is paid**, and the claim card
-   reads `PAID`.
+   reads `PAID`. The agent asks whether anything else is needed — answer `no thanks`
+   and it says goodbye and **completes the workflow**: a settled conversation never
+   hangs open.
+
+The manager's other two buttons tell their own stories: **Request bill** opens a fresh
+attachment case quoting jane's comment, and once the new document arrives the sign-off
+is asked again; **Reject** pushes the rejection — reason included — straight into bob's
+chat, marks the claim `REJECTED`, and the same closing etiquette ends the conversation.
 8. The persistence beat: **sign bob out, sign back in** → AI claims → the conversation
    is intact, every turn — conversations, cases, and correlation tokens live in the
    application database, not the browser.
