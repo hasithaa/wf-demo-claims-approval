@@ -107,5 +107,20 @@ Sign into the ICP as jane (SSO) or admin:
 | Portal API calls fail after recreating a service | nginx pins upstream IPs: `docker compose restart webapp` (same for `edge` after recreating `icp`) |
 | AI chat answers with canned prose | No/expired `WSO2_AI_TOKEN` — the scripted stand-in took over; refresh the token and `docker compose up -d claims-agent` |
 | Agent bubble pending forever | The gate is waiting — that's john's cue, not a bug |
-| ICP login says "Error getting user details" | Connection-pool wedge: `docker compose exec postgres psql -U postgres -d icp_db -c "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname='icp_db' AND state='idle in transaction'"` |
+| ICP login says "Error getting user details", or the console stops answering | The connection-pool wedge — run `scripts/recover.sh`; it terminates stuck sessions, restarts the ICP when its own pool is exhausted, and re-pins nginx |
 | Tasks views empty for a user | Human tasks are role-gated by name — the user's group must map to `MANAGER`/`ACCOUNTANT` (seeded for jane/john) |
+| An AI chat "looks stuck" | `scripts/trace-agent.sh <conversationId>` (or a `CLM-` id) — a pending turn with a token is parked behind a gate/task/event, not lost |
+
+## Housekeeping scripts
+
+- `scripts/recover.sh` — diagnoses and heals the stack's known failure modes (the ICP
+  pool wedge in both its faces, nginx's pinned upstreams, stopped containers).
+- `scripts/reset-data.sh` — start from scratch: wipes all claims, chats, bills, and
+  notifications and terminates every open workflow execution; identities and
+  configuration survive. Asks first (`-y` skips).
+- `scripts/seed-demo-data.sh` — a lived-in look: historical claims in terminal states
+  for alice and bob (AI-filed ones included) plus their bell history. Pending work is
+  deliberately not seeded — create it through the portal so decisions actually work.
+- `scripts/trace-agent.sh [id]` — follows one agent run's correlation chain: the
+  conversation, every turn's reply token, attachment cases, claim rows, and what
+  Temporal says the run is doing right now. No argument traces the newest conversation.
