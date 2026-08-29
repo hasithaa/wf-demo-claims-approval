@@ -390,6 +390,16 @@ isolated function callTool(string name, map<json> args) returns map<json> {
 # file, validate, chase the missing bill through an attachment case, escalate to the
 # manager over the threshold, notify, and reach for the gated payment.
 isolated function scriptedTurn(json[] messages) returns map<json> {
+    // A side turn: the framework injects a park-note system message mid-list when the
+    // main loop is durably parked and the user asks something meanwhile. Tool-less by
+    // contract - answer with a status line.
+    foreach json m in messages {
+        if m is map<json> && m["role"] == "system" && m["content"] is string
+                && (<string>m["content"]).startsWith("You are the same assistant") {
+            return {content: "Quick update: the claim is parked on an approval right now - " +
+                "I will pick the conversation back up the moment it clears."};
+        }
+    }
     ScriptState s = scanScript(messages);
 
     if s.paymentRef is string {
