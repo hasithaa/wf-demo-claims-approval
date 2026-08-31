@@ -172,6 +172,9 @@ service /agent on new http:Listener(8080) {
 
     # The scripted model's wire endpoint (see selectModel). Not part of the portal API.
     resource function post mockllm/chat/completions(map<json> request) returns http:Ok {
+        // The believable-latency pause (see scripted_model.bal) — a real model call
+        // never answers in a millisecond, and neither should its stand-in.
+        scriptedThinkPause();
         json[] messages = request["messages"] is json[] ? <json[]>request["messages"] : [];
         map<json> turn = scriptedTurn(messages);
         map<json> message = {"role": "assistant"};

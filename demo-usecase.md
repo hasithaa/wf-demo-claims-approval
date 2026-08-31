@@ -112,7 +112,7 @@ Sign into the ICP as jane (SSO) or admin:
 |---|---|
 | `400 The plain HTTP request was sent to HTTPS port` | Use **https**://localhost:9664 |
 | Portal API calls fail after recreating a service | nginx pins upstream IPs: `docker compose restart webapp` (same for `edge` after recreating `icp`) |
-| AI chat answers with canned prose | No/expired `WSO2_AI_TOKEN` — the scripted stand-in took over; refresh the token and `docker compose up -d claims-agent` |
+| AI chat answers with canned prose | No/expired `WSO2_AI_TOKEN` — the scripted stand-in took over; refresh the token and `docker compose up -d claims-agent`. (The stand-in paces itself like a real model — a few seconds per step; set `mockThinkSeconds = 0` in the agent's config to make it instant.) |
 | Agent bubble pending forever | The gate is waiting — that's john's cue, not a bug |
 | ICP login says "Error getting user details", or the console stops answering | The connection-pool wedge — run `scripts/recover.sh`; it terminates stuck sessions, restarts the ICP when its own pool is exhausted, and re-pins nginx |
 | Tasks views empty for a user | Human tasks are role-gated by name — the user's group must map to `MANAGER`/`ACCOUNTANT` (seeded for jane/john) |

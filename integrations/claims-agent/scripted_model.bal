@@ -3,7 +3,25 @@
 // here so the agent's actual process (agent.bal) reads without this noise — the only
 // thing main.bal keeps is the /mockllm wire endpoint that serves these turns.
 import ballerina/ai;
+import ballerina/lang.runtime;
 import ballerina/log;
+import ballerina/random;
+
+// An instant answer reads as fake in a live demo. Every scripted model call holds for a
+// believable "thinking" moment; the real WSO2 provider needs no help. Multiplied by the
+// several tool-calls a turn makes, a user turn lands in the natural few-seconds range.
+// Set to 0 to switch the pause off (e.g. for fast automated runs).
+configurable decimal mockThinkSeconds = 1.2;
+
+// Sleeps for the configured pause with ±40% jitter, so consecutive calls do not tick
+// like a metronome.
+isolated function scriptedThinkPause() {
+    if mockThinkSeconds <= 0d {
+        return;
+    }
+    float jitter = 0.6 + random:createDecimal() * 0.8;
+    runtime:sleep(mockThinkSeconds * <decimal>jitter);
+}
 
 // `ai:ModelProvider` cannot be implemented in pure Ballerina (its `generate` is
 // dependently typed, which requires an external body), so the keyless fallback works at
