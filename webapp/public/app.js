@@ -69,21 +69,41 @@ const api = (path, init = {}) => fetch(`/api${path}`, {
 
 const app = document.getElementById('app');
 const modal = document.getElementById('modal');
-let tab = 'claims';
+const chatPanel = document.getElementById('chatPanel');
+const aiFab = document.getElementById('aiFab');
+// Two top-level workspaces, not sibling tabs: 'claims' is everyone's space,
+// 'approvals' is the decider space (managers/accountants) and looks different.
+let mode = 'claims';
+let chatOpen = false;
 let activeConversation = null;
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 function shell(content) {
   const decider = isDecider();
-  app.innerHTML = `
-    <div class="tabs">
-      <button class="${tab === 'claims' ? 'active' : ''}" onclick="setTab('claims')">My claims</button>
-      <button class="${tab === 'smart' ? 'active' : ''}" onclick="setTab('smart')">AI claims</button>
-      ${decider ? `<button class="${tab === 'tasks' ? 'active' : ''}" onclick="setTab('tasks')">Decisions</button>` : ''}
-    </div>${content}`;
+  document.body.classList.toggle('admin', mode === 'approvals');
+  const switcher = decider ? `
+    <div class="mode-switch">
+      <button class="${mode === 'claims' ? 'active' : ''}" onclick="setMode('claims')">🗂️ My claims</button>
+      <button class="${mode === 'approvals' ? 'active' : ''}" onclick="setMode('approvals')">✅ Approvals</button>
+    </div>` : '';
+  const banner = mode === 'approvals' ? `
+    <div class="admin-banner"><b>Approvals workspace</b> — every card here is a live process, parked on your decision.</div>` : '';
+  app.innerHTML = `${switcher}${banner}${content}`;
 }
 
-window.setTab = (t) => { tab = t; if (t !== 'smart') activeConversation = null; refresh(); };
+window.setMode = (m) => { mode = m; refresh(); };
+
+// A confirmation the user actually sees — decisions and submits confirm here, and the
+// view refreshes right after so the completed card is visibly gone.
+const toasts = document.getElementById('toasts');
+function showToast(msg, kind = 'good') {
+  const el = document.createElement('div');
+  el.className = `toast ${kind}`;
+  el.textContent = msg;
+  toasts.appendChild(el);
+  setTimeout(() => el.classList.add('gone'), 3400);
+  setTimeout(() => el.remove(), 3900);
+}
 
 // ── My claims ─────────────────────────────────────────────────────────────────
 
@@ -94,7 +114,7 @@ async function renderClaims() {
   claimsById = Object.fromEntries(rows.map((c) => [c.claimId, c]));
   const list = rows.length === 0
     ? `<div class="empty"><span class="big">🗂️</span>No claims yet.<br>
-       <span class="muted">Start with <b>New claim</b> — or let the AI agent file it from a sentence.</span></div>`
+       <span class="muted">Start with <b>New claim</b> — or open the 🤖 assistant and just tell it what happened.</span></div>`
     : rows.map((c) => `
       <div class="card" style="cursor:pointer" onclick="openClaimDetail('${esc(c.claimId)}')">
         <div class="row">
@@ -118,7 +138,7 @@ async function renderClaims() {
       <h2>My claims</h2>
       <div class="spacer" style="flex:1"></div>
       <button class="primary" onclick="openClaimModal()">＋ New claim</button>
-      <button class="ai" onclick="startAiClaim()">🤖 Submit with AI agent</button>
+      <button class="ai" onclick="openChat()">🤖 Claims assistant</button>
     </div>
     ${list}`);
 }
@@ -167,6 +187,7 @@ window.detailAttachBill = async (claimId, workflowId) => {
   const at = await api(`/bills/${billId}/attach`, { method: 'POST', body: JSON.stringify({ workflowId, claimId }) });
   if (!at.ok) return alert('Attach failed: ' + (await at.text()));
   window.closeModal();
+  showToast('Bill attached — the reviewer gets it with the claim.');
   refresh();
 };
 
@@ -213,6 +234,7 @@ window.submitClaim = async () => {
   const res = await api('/claims/', { method: 'POST', body: JSON.stringify({ amount, description, billUrl }) });
   if (!res.ok) { btn.disabled = false; btn.textContent = 'Submit claim'; return alert('Submit failed: ' + (await res.text())); }
   window.closeModal();
+  showToast('Claim submitted — a manager reviews it; watch the bell.');
   refresh();
 };
 
@@ -229,49 +251,72 @@ window.uploadBill = async (claimId, workflowId) => {
   const { billId } = await up.json();
   const at = await api(`/bills/${billId}/attach`, { method: 'POST', body: JSON.stringify({ workflowId, claimId }) });
   if (!at.ok) return alert('Attach failed: ' + (await at.text()));
+  showToast('Bill attached — the process resumes on its own.');
   refresh();
 };
 
-// ── AI claims: chatting with the durable agent ────────────────────────────────
-// Conversations and every turn's correlation token live in the application database,
-// so this view survives new sessions, new browsers, and restarts. A pending reply
-// usually means the payment is waiting on the accountant — the demo's point.
+// ── The claims assistant: an overlay chat with the durable agent ──────────────
+// The chat is deliberately NOT another claims form. The classic flow creates a claim
+// the moment you submit; the assistant is an intelligent orchestrator — a chat session
+// starts first, and the claim is created only once the agent has gathered what it
+// needs. Conversations and every turn's correlation token live in the application
+// database, so sessions survive new browsers and restarts. A pending reply usually
+// means the payment is waiting on the accountant — the demo's point.
+
+window.toggleChat = () => (chatOpen ? window.closeChat() : window.openChat());
+window.openChat = async () => {
+  chatOpen = true;
+  chatPanel.hidden = false;
+  aiFab.classList.add('open');
+  // Always a fresh fetch on open: outcomes that landed while the panel was closed
+  // (approved, paid, refused) must be in the history the moment it appears.
+  await renderChat();
+};
+window.closeChat = () => {
+  chatOpen = false;
+  chatPanel.hidden = true;
+  aiFab.classList.remove('open');
+};
 
 window.startAiClaim = async () => {
   const created = await api('/agent/conversations', { method: 'POST' });
   if (!created.ok) return alert('Could not start the agent: ' + (await created.text()));
   activeConversation = (await created.json()).conversationId;
-  tab = 'smart';
-  refresh();
+  await renderChat();
 };
 
-async function renderSmart() {
+async function renderChat() {
   if (activeConversation) return renderConversation(activeConversation);
   const res = await api('/agent/conversations');
   const rows = res.ok ? await res.json() : [];
   const list = rows.length === 0
-    ? `<div class="empty"><span class="big">🤖</span>No AI claims yet.<br>
-       <span class="muted">Tell the agent what happened — it files the claim, estimates the payout, and asks the accountant to release the money.</span></div>`
+    ? '<div class="empty" style="padding:1.6rem .5rem">No sessions yet.</div>'
     : rows.map((c) => `
-      <div class="card" style="cursor:pointer" onclick="openConversation('${esc(c.conversationId)}')">
-        <div class="row">
-          <span class="ai-badge">🤖 conversation</span>
+      <div class="session-card" onclick="openConversation('${esc(c.conversationId)}')">
+        <div class="row" style="gap:.5rem">
+          <span class="ai-badge">🤖 session</span>
           <span class="muted" style="font-family:monospace">${esc(c.conversationId.slice(0, 13))}…</span>
           <div class="spacer" style="flex:1"></div>
           <span class="muted">${esc((c.createdAt || '').slice(0, 16).replace('T', ' '))}</span>
         </div>
       </div>`).join('');
-  shell(`
-    <div class="toolbar">
-      <h2>AI claims</h2>
-      <div class="spacer" style="flex:1"></div>
-      <button class="ai" onclick="startAiClaim()">🤖 New AI claim</button>
+  chatPanel.innerHTML = `
+    <div class="chat-head">
+      <span class="chat-title">🤖 Claims assistant</span>
+      <div class="spacer"></div>
+      <button class="x" onclick="closeChat()" title="Close">✕</button>
     </div>
-    ${list}`);
+    <div class="chat-body">
+      <div class="chat-pitch">Just tell it what happened. The assistant asks for what's missing and opens
+        the claim only when it has enough — no form to fill.</div>
+      <button class="ai wide" onclick="startAiClaim()">＋ Start a new chat</button>
+      <div class="session-label">Previous sessions</div>
+      ${list}
+    </div>`;
 }
 
-window.openConversation = (id) => { activeConversation = id; refresh(); };
-window.backToAiList = () => { activeConversation = null; refresh(); };
+window.openConversation = (id) => { activeConversation = id; renderChat(); };
+window.backToAiList = () => { activeConversation = null; renderChat(); };
 
 let casesById = {};
 
@@ -303,19 +348,19 @@ async function renderConversation(id) {
       </div>` : `
       <div class="case-card done">📎 case ${esc(c.caseId)} — document submitted ✓</div>`).join('');
   const draft = document.getElementById('chatmsg')?.value ?? '';
-  shell(`
-    <div class="toolbar">
-      <button class="quiet" onclick="backToAiList()">← All AI claims</button>
-      <span class="ai-badge">🤖 ${esc(id.slice(0, 13))}…</span>
+  chatPanel.innerHTML = `
+    <div class="chat-head">
+      <button class="x" onclick="backToAiList()" title="All sessions">←</button>
+      <span class="chat-title">🤖 Claims assistant</span>
+      <span class="chat-id">${esc(id.slice(0, 13))}…</span>
+      <div class="spacer"></div>
+      <button class="x" onclick="closeChat()" title="Close">✕</button>
     </div>
-    <div class="card">
-      <div id="chatlog" style="max-height:24rem;overflow:auto">${log}</div>
-      ${caseCards}
-      <div class="row" style="margin-top:.8rem">
-        <input type="text" id="chatmsg" placeholder="e.g. Broke my laptop on a work trip, about $1200" style="flex:1;min-width:16rem" onkeydown="if(event.key==='Enter')sendChat()">
-        <button class="ai" onclick="sendChat()">Send</button>
-      </div>
-    </div>`);
+    <div class="chat-log" id="chatlog">${log}${caseCards}</div>
+    <div class="chat-compose">
+      <input type="text" id="chatmsg" placeholder="e.g. Broke my laptop on a work trip, about $1200" onkeydown="if(event.key==='Enter')sendChat()">
+      <button class="ai" onclick="sendChat()">Send</button>
+    </div>`;
   const draftBox = document.getElementById('chatmsg');
   if (draftBox && draft) draftBox.value = draft;
   watchConversation(id, JSON.stringify([turns.map((t) => [t.id, t.pending]), cases.map((c) => [c.caseId, c.status])]));
@@ -346,7 +391,7 @@ function watchConversation(id, sig) {
   chatSig = sig;
   if (chatWatch) return;
   chatWatch = setInterval(async () => {
-    if (tab !== 'smart' || activeConversation !== id) {
+    if (!chatOpen || activeConversation !== id) {
       clearInterval(chatWatch); chatWatch = null; return;
     }
     try {
@@ -376,7 +421,8 @@ window.submitCase = async (caseId) => {
   const { billId, url } = await up.json();
   const sub = await api(`/agent/cases/${caseId}/submit`, { method: 'POST', body: JSON.stringify({ url, billId }) });
   if (!sub.ok) return alert('Case submit failed: ' + (await sub.text()));
-  if (activeConversation) await renderConversation(activeConversation);
+  showToast('Document attached — the agent picks it up from here.');
+  if (chatOpen && activeConversation) await renderConversation(activeConversation);
 };
 
 window.sendChat = async () => {
@@ -405,7 +451,7 @@ async function pollReply(id, turn) {
       try { res = await api(`/agent/conversations/${id}/replies/${turn}`); }
       catch { await new Promise((r) => setTimeout(r, 2000)); continue; }
       if (res.status === 200 || res.status === 410) {
-        if (tab === 'smart' && activeConversation === id) await renderConversation(id);
+        if (chatOpen && activeConversation === id) await renderConversation(id);
         return;
       }
       await new Promise((r) => setTimeout(r, 2000));
@@ -481,8 +527,11 @@ window.decideReview = async (taskId, action) => {
   const res = await api(`/agent/reviews/${taskId}/decide`, {
     method: 'POST', body: JSON.stringify(feedback ? { action, feedback } : { action }),
   });
-  if (!res.ok) alert('Could not decide the payment: ' + (await res.text()));
-  refresh();
+  if (!res.ok) return alert('Could not decide the payment: ' + (await res.text()));
+  showToast(action === 'proceed'
+    ? 'Payment released — the agent completes the run.'
+    : 'Payment refused — the agent is told why.', action === 'proceed' ? 'good' : 'bad');
+  await refresh();
 };
 
 window.decide = async (taskId, result, src = 'claims') => {
@@ -490,8 +539,11 @@ window.decide = async (taskId, result, src = 'claims') => {
   if (c && result.comment === undefined) result.comment = c;
   const base = src === 'agent' ? '/agent/tasks' : '/claims/tasks';
   const res = await api(`${base}/${taskId}/complete`, { method: 'POST', body: JSON.stringify({ result }) });
-  if (!res.ok) alert('Could not complete the task: ' + (await res.text()));
-  refresh();
+  if (!res.ok) return alert('Could not complete the task: ' + (await res.text()));
+  const said = result.outcome || (result.approved === true ? 'PAYMENT APPROVED' : result.approved === false ? 'PAYMENT REFUSED' : 'DONE');
+  showToast(`Decision recorded — ${said.replace(/_/g, ' ').toLowerCase()}. The process moves on.`,
+    /REJECT|REFUSED/.test(said) ? 'bad' : 'good');
+  await refresh();
 };
 
 // ── Inbox ─────────────────────────────────────────────────────────────────────
@@ -524,8 +576,7 @@ bellBtn.onclick = () => { inboxPanel.hidden = !inboxPanel.hidden; };
 
 async function refresh() {
   if (!token()) return;
-  if (tab === 'tasks' && isDecider()) await renderTasks();
-  else if (tab === 'smart') await renderSmart();
+  if (mode === 'approvals' && isDecider()) await renderTasks();
   else await renderClaims();
   await refreshInbox();
 }
@@ -538,12 +589,14 @@ async function refresh() {
     document.getElementById('who').innerHTML =
       `<b>${esc(me())}</b> ${roles.map((r) => `<span class="chip role">${esc(r)}</span>`).join(' ')}`;
     bellBtn.hidden = false;
+    aiFab.hidden = false;
+    aiFab.onclick = window.toggleChat;
     authBtn.textContent = 'Sign out';
     authBtn.onclick = signOut;
     await refresh();
-    // The chat view manages its own polling; a full refresh mid-conversation would
-    // discard what the user is typing.
-    setInterval(() => { if (tab !== 'smart') refresh(); else refreshInbox(); }, 10000);
+    // The chat overlay owns its own polling and draft-preserving redraws; the main
+    // view can refresh freely underneath it without touching what the user is typing.
+    setInterval(() => refresh(), 10000);
   } else {
     authBtn.onclick = signIn;
   }

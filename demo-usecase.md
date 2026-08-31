@@ -10,13 +10,22 @@ below is exactly what to click and what to say.
 | Sign in as | Password | Where | Role in the story |
 |---|---|---|---|
 | alice | alice12345 | Portal http://localhost:9090 | Submits a claim with the form |
-| bob | bob12345 | Portal | Files his claim by chatting with the AI agent |
-| jane | jane12345 | Portal (Decisions tab) or ICP | Manager — reviews every claim |
-| john | john12345 | Portal (Decisions) or ICP | Accountant — releases every payment |
+| bob | bob12345 | Portal | Files his claim by chatting with the 🤖 assistant |
+| jane | jane12345 | Portal (Approvals workspace) or ICP | Manager — reviews every claim |
+| john | john12345 | Portal (Approvals) or ICP | Accountant — releases every payment |
 | admin | admin | ICP https://localhost:9664 (local login) | Operations narrator |
 
 One identity for everything: all four sign into both portals through Thunder (SSO on
 the ICP side), and their groups become the roles the tasks are gated on.
+
+The portal has **two workspaces**, not tabs: **My claims** (everyone) and **Approvals**
+(managers and accountants only — a green-tinted space with its own banner; jane and john
+see the switch, alice and bob don't). The AI assistant is neither: it's the floating
+**🤖 button**, bottom-right, which opens a chat overlay with its own sessions — start a
+new chat, or reopen an old one. *Say: the two entry points are two different ideas. The
+form is plain orchestration — a claim exists the moment you submit. The assistant is an
+intelligent orchestrator — a chat session exists first, and the claim is created only
+once the agent has gathered enough. That's what an agent-based workflow buys you.*
 
 ## Before the audience arrives
 
@@ -42,13 +51,14 @@ the ICP side), and their groups become the roles the tasks are gated on.
    *Say: the workflow is already running; the claim row you see is the application's own
    database, which the workflow keeps updated — Temporal history is not the system of
    record.*
-3. **jane** signs in (second browser/profile) → **Decisions**. The review shows the
-   claim's facts. Type `Need the receipt, please` and click **Request bill**.
+3. **jane** signs in (second browser/profile) → the **Approvals** workspace. The review
+   shows the claim's facts. Type `Need the receipt, please` and click **Request bill** —
+   a toast confirms the decision and the card leaves the list.
 4. **alice**'s card flips to `BILL REQUESTED` (bell rings). Pick any file →
    **Upload & attach bill**. *Say: the file went to the bill store — its own service,
    its own database — and the attach fired an event into the parked workflow.*
-5. **jane** → Decisions: the review is back **with the bill link**. **Approve**.
-6. **john** signs in → Decisions → **Approve payment**. *Say: the money moves only
+5. **jane** → Approvals: the review is back **with the bill link**. **Approve**.
+6. **john** signs in → Approvals → **Approve payment**. *Say: the money moves only
    after this — the payment step is a separate human gate for a separate role.*
 7. **alice**: the card reads `PAID` with the payment reference; the bell narrates the
    whole story. Total elapsed: about two minutes.
@@ -59,19 +69,22 @@ The agent runs the whole case under three pre-approval rules it enforces itself:
 over **$1000** a bill is required, over **$3000** a manager signs off, and the payment
 is **always** gated on an accountant. Small claims sail straight through.
 
-1. **bob** signs in → **🤖 Submit with AI agent**. Say nothing: **the agent speaks
+1. **bob** signs in → the floating **🤖 button** → **Start a new chat**. *Say: notice
+   what did NOT happen — no claim exists yet. A chat session started; the claim comes
+   only when the agent has what it needs.* Then say nothing: **the agent speaks
    first** — a greeting asking what happened, pushed through its one-way chat activity
    before any user turn exists.
-2. Type: `Crashed my rental car on a client visit, about $4200 in damages`. The agent
-   files the claim (the reply names the claim id; **My claims** shows the card with the
-   *🤖 AI filed* badge), validates it, and — over $1000 with no receipt — opens an
-   **attachment case** right in the thread: a dashed card asking for the bill.
+2. Type: `Crashed my rental car on a client visit, about $4200 in damages`. NOW the
+   agent files the claim (the reply names the claim id; **My claims** underneath the
+   overlay shows the card with the *🤖 AI filed* badge), validates it, and — over $1000
+   with no receipt — opens an **attachment case** right in the thread: a dashed card
+   asking for the bill.
    *Say: the case carries the workflow instance ID — that correlation is how the
    uploaded file finds its way back into this exact run.*
 3. Pick any file → **Attach & resume**. The submission fires an event into the parked
    agent; it re-validates and — over $3000 — raises a **manager sign-off** task.
-4. **jane** → **Decisions** → the *Manager sign-off (Smart Claim)* card, claim facts
-   attached → **Approve**.
+4. **jane** → **Approvals** → the *Manager sign-off (Smart Claim)* card, claim facts
+   attached → **Approve** (toast, card gone).
 5. Watch bob's chat: the agent pushes *"approved … waiting for payment processing"*,
    rings bob's bell, and notifies the accountants — then reaches for `executePayment`,
    where the platform stops it: `requiresApproval: true` for role `ACCOUNTANT`.

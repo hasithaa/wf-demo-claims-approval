@@ -10,6 +10,7 @@
     --line: #E1E4E9; --accent: #2E5E8C; --accent-soft: #E8F0F7;
     --good: #3E7A4E; --warn: #B07A2A; --bad: #A34A3C;
     --ai: #6B5B95; --ai-soft: #F0EDF7;
+    --admin: #2F7A5F; --admin-soft: #E5F2EC;
     --shadow: 0 1px 3px rgba(28,43,58,.08), 0 6px 20px rgba(28,43,58,.06);
   }
   * { box-sizing: border-box; }
@@ -24,10 +25,18 @@
           border: 1px solid; border-radius: 999px; }
   .chip.role { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
   main { max-width: 62rem; margin: 1.6rem auto 4rem; padding: 0 1.2rem; }
-  .tabs { display: flex; gap: .4rem; margin-bottom: 1.1rem; }
-  .tabs button { border: 1px solid var(--line); background: var(--panel); padding: .45rem 1.1rem;
-                 border-radius: 999px; cursor: pointer; font: inherit; color: var(--ink2); }
-  .tabs button.active { color: #fff; background: var(--accent); border-color: var(--accent); font-weight: 600; }
+  /* Two workspaces, not tabs: everyone's claims space vs the deciders' approvals
+     space. The switch is heavier than a tab, and the admin side re-tints the page. */
+  .mode-switch { display: flex; gap: 1.4rem; margin-bottom: 1.2rem; border-bottom: 2px solid var(--line); }
+  .mode-switch button { border: none; background: none; font: inherit; font-size: 1.05rem; font-weight: 600;
+                        color: var(--ink2); padding: .5rem .2rem; cursor: pointer;
+                        border-bottom: 3px solid transparent; margin-bottom: -2px; }
+  .mode-switch button.active { color: var(--accent); border-bottom-color: var(--accent); }
+  body.admin { --ground: #F1F5F2; }
+  body.admin .mode-switch button.active { color: var(--admin); border-bottom-color: var(--admin); }
+  .admin-banner { background: linear-gradient(90deg, var(--admin-soft), transparent);
+                  border-left: 4px solid var(--admin); border-radius: 8px;
+                  padding: .6rem .9rem; margin-bottom: 1.1rem; font-size: .9rem; }
   .toolbar { display: flex; align-items: center; gap: .6rem; margin-bottom: 1rem; }
   .toolbar h2 { margin: 0; font-size: 1.15rem; }
   .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
@@ -89,6 +98,47 @@
   .ai-badge { display: inline-flex; align-items: center; gap: .35rem; font-size: .72rem;
               font-weight: 700; color: var(--ai); background: var(--ai-soft);
               border-radius: 999px; padding: .15em .7em; letter-spacing: .04em; }
+  /* The claims assistant lives in an overlay, not a tab: a floating robot button
+     opens a chat panel with its own sessions — chat first, claim when it's ready. */
+  #aiFab { position: fixed; right: 1.4rem; bottom: 1.4rem; width: 3.5rem; height: 3.5rem;
+           border-radius: 50%; border: none; background: var(--ai); color: #fff; font-size: 1.55rem;
+           cursor: pointer; box-shadow: 0 10px 28px rgba(107,91,149,.45); z-index: 8;
+           transition: transform .15s ease; }
+  #aiFab:hover { transform: scale(1.07); }
+  #aiFab.open { background: var(--ink); box-shadow: 0 10px 28px rgba(28,43,58,.35); }
+  #chatPanel { position: fixed; right: 1.4rem; bottom: 5.6rem;
+               width: min(27rem, calc(100vw - 2rem)); height: min(36rem, calc(100vh - 9rem));
+               background: var(--panel); border: 1px solid var(--line); border-radius: 14px;
+               box-shadow: 0 26px 64px rgba(28,43,58,.32); z-index: 9;
+               display: flex; flex-direction: column; overflow: hidden; }
+  #chatPanel[hidden] { display: none; }
+  .chat-head { display: flex; align-items: center; gap: .55rem; padding: .65rem .9rem;
+               background: var(--ai); color: #fff; flex: none; }
+  .chat-head .chat-title { font-weight: 700; font-size: .95rem; }
+  .chat-head .chat-id { font-family: monospace; font-size: .7rem; opacity: .8; }
+  .chat-head .x { background: none; border: none; color: #fff; font-size: 1rem; cursor: pointer;
+                  padding: .1rem .3rem; border-radius: 6px; }
+  .chat-head .x:hover { background: rgba(255,255,255,.18); }
+  .chat-body { flex: 1; overflow: auto; padding: .9rem; }
+  .chat-log { flex: 1; overflow: auto; padding: .9rem; }
+  .chat-compose { display: flex; gap: .5rem; padding: .6rem .8rem; border-top: 1px solid var(--line);
+                  background: var(--panel); flex: none; }
+  .chat-pitch { font-size: .85rem; color: var(--ink2); margin-bottom: .8rem; }
+  .session-label { font-size: .7rem; font-weight: 700; letter-spacing: .07em; color: var(--ink2);
+                   text-transform: uppercase; margin: 1rem 0 .45rem; }
+  .session-card { border: 1px solid var(--line); border-radius: 10px; padding: .6rem .8rem;
+                  margin-bottom: .5rem; cursor: pointer; }
+  .session-card:hover { border-color: var(--ai); background: var(--ai-soft); }
+  button.wide { width: 100%; }
+  /* Toasts: the confirmation the user actually sees after a decision or submit */
+  #toasts { position: fixed; top: 1rem; left: 50%; transform: translateX(-50%); z-index: 20;
+            display: flex; flex-direction: column; gap: .5rem; align-items: center; pointer-events: none; }
+  .toast { color: #fff; background: var(--ink); padding: .6rem 1.2rem; border-radius: 999px;
+           box-shadow: 0 12px 32px rgba(28,43,58,.35); font-size: .9rem; max-width: min(34rem, 90vw);
+           transition: opacity .4s ease, transform .4s ease; }
+  .toast.good { background: var(--good); }
+  .toast.bad { background: var(--bad); }
+  .toast.gone { opacity: 0; transform: translateY(-8px); }
 </style>
 </head>
 <body>
@@ -105,6 +155,9 @@
   <p class="muted">Sign in to submit a claim — with a form, or by telling our AI agent what happened.</p>
 </div></main>
 <div id="modal" hidden></div>
+<div id="toasts"></div>
+<button id="aiFab" hidden title="Claims assistant">🤖</button>
+<div id="chatPanel" hidden></div>
 <script src="app.js"></script>
 </body>
 </html>
