@@ -348,6 +348,11 @@ async function renderConversation(id) {
       </div>` : `
       <div class="case-card done">📎 case ${esc(c.caseId)} — document submitted ✓</div>`).join('');
   const draft = document.getElementById('chatmsg')?.value ?? '';
+  // The composer stays locked until the agent's greeting has landed: a message sent into
+  // the empty session races the greeting, gets a generic scripted answer, and the greeting
+  // then arrives AFTER the exchange — a transcript that reads broken. The watcher re-renders
+  // the moment the greeting turn exists, which unlocks the input.
+  const opening = turns.length === 0;
   chatPanel.innerHTML = `
     <div class="chat-head">
       <button class="x" onclick="backToAiList()" title="All sessions">←</button>
@@ -358,8 +363,10 @@ async function renderConversation(id) {
     </div>
     <div class="chat-log" id="chatlog">${log}${caseCards}</div>
     <div class="chat-compose">
-      <input type="text" id="chatmsg" placeholder="e.g. Broke my laptop on a work trip, about $1200" onkeydown="if(event.key==='Enter')sendChat()">
-      <button class="ai" onclick="sendChat()">Send</button>
+      <input type="text" id="chatmsg" ${opening ? 'disabled' : ''}
+        placeholder="${opening ? 'The assistant is opening your case…' : 'e.g. Broke my laptop on a work trip, about $1200'}"
+        onkeydown="if(event.key==='Enter')sendChat()">
+      <button class="ai" onclick="sendChat()" ${opening ? 'disabled' : ''}>Send</button>
     </div>`;
   const draftBox = document.getElementById('chatmsg');
   if (draftBox && draft) draftBox.value = draft;
@@ -427,6 +434,7 @@ window.submitCase = async (caseId) => {
 
 window.sendChat = async () => {
   const input = document.getElementById('chatmsg');
+  if (!input || input.disabled) return;
   const text = input.value.trim();
   if (!text || !activeConversation) return;
   input.value = '';
