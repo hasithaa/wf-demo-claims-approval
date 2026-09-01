@@ -296,6 +296,7 @@ async function renderChat() {
         <div class="row" style="gap:.5rem">
           <span class="ai-badge">🤖 session</span>
           <span class="muted" style="font-family:monospace">${esc(c.conversationId.slice(0, 13))}…</span>
+          ${c.status === 'CLOSED' ? '<span class="chip role" style="color:var(--ink2);border-color:var(--line);background:none">closed</span>' : ''}
           <div class="spacer" style="flex:1"></div>
           <span class="muted">${esc((c.createdAt || '').slice(0, 16).replace('T', ' '))}</span>
         </div>
@@ -379,9 +380,13 @@ async function renderConversation(id) {
     if (state.final && !turns.some((t) => t.text === state.final)) {
       document.getElementById('chatlog').insertAdjacentHTML('beforeend',
         `<div class="bubble-row"><div class="bubble agent">${esc(state.final)}</div></div>`);
-    } else if (state.failed) {
-      document.getElementById('chatlog').insertAdjacentHTML('beforeend',
-        `<div class="bubble-row"><div class="bubble agent pending">This conversation has ended — start a new AI claim.</div></div>`);
+    }
+    if (state.final || state.failed) {
+      if (state.failed && !state.final) {
+        document.getElementById('chatlog').insertAdjacentHTML('beforeend',
+          `<div class="bubble-row"><div class="bubble agent pending">This conversation has ended — start a new chat.</div></div>`);
+      }
+      lockComposer('This conversation has ended');
     }
   }
   const el = document.getElementById('chatlog');
@@ -427,7 +432,12 @@ window.submitCase = async (caseId) => {
   if (!up.ok) return alert('Upload failed: ' + (await up.text()));
   const { billId, url } = await up.json();
   const sub = await api(`/agent/cases/${caseId}/submit`, { method: 'POST', body: JSON.stringify({ url, billId }) });
-  if (!sub.ok) return alert('Case submit failed: ' + (await sub.text()));
+  if (sub.status === 410) {
+    const { message } = await sub.json().catch(() => ({ message: 'This conversation has ended — start a new chat.' }));
+    appendEndedNotice(message);
+    return;
+  }
+  if (!sub.ok) return showToast('Could not attach the document — try again in a moment.', 'bad');
   showToast('Document attached — the agent picks it up from here.');
   if (chatOpen && activeConversation) await renderConversation(activeConversation);
 };
@@ -441,11 +451,39 @@ window.sendChat = async () => {
   const sent = await api(`/agent/conversations/${activeConversation}/messages`, {
     method: 'POST', body: JSON.stringify({ message: text }),
   });
-  if (!sent.ok) return alert('Send failed: ' + (await sent.text()));
+  if (sent.status === 410) {
+    // The run no longer answers — timed out, finished, or aged out. The reason is a
+    // sentence the service classified; it belongs in the thread, not in an alert.
+    const { message } = await sent.json().catch(() => ({ message: 'This conversation has ended — start a new chat.' }));
+    appendEndedNotice(message);
+    return;
+  }
+  if (!sent.ok) {
+    input.value = text; // the words weren't delivered — don't lose them
+    return showToast('Could not send the message — try again in a moment.', 'bad');
+  }
   const { token: turn } = await sent.json();
   await renderConversation(activeConversation);
   pollReply(activeConversation, turn);
 };
+
+// The thread's closing notice: one agent-side bubble with the reason, and a locked
+// composer — an ended conversation reads as ended, it doesn't error.
+function appendEndedNotice(message) {
+  const log = document.getElementById('chatlog');
+  if (log) {
+    log.insertAdjacentHTML('beforeend',
+      `<div class="bubble-row"><div class="bubble agent pending">${esc(message)}</div></div>`);
+    log.scrollTop = log.scrollHeight;
+  }
+  lockComposer('This conversation has ended');
+}
+
+function lockComposer(placeholder) {
+  const input = document.getElementById('chatmsg');
+  if (input) { input.disabled = true; input.value = ''; input.placeholder = placeholder; }
+  document.querySelectorAll('.chat-compose button.ai').forEach((b) => { b.disabled = true; });
+}
 
 const polling = new Set();
 async function pollReply(id, turn) {

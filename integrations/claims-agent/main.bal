@@ -265,7 +265,7 @@ service /agent on new http:Listener(8080) {
     # the `caseSubmitted` event wakes the waiting agent — the case's workflow id is the
     # correlation that finds the right run.
     resource function post cases/[string caseId]/submit(@http:Header string? authorization,
-            CaseSubmission submission) returns json|http:Unauthorized|http:NotFound|error {
+            CaseSubmission submission) returns json|http:Unauthorized|http:NotFound|http:Response|error {
         Caller|http:Unauthorized caller = authenticate(authorization);
         if caller is http:Unauthorized {
             return caller;
@@ -291,8 +291,12 @@ service /agent on new http:Listener(8080) {
             bill_url = ${submission.url}, submitted_at = now() WHERE case_id = ${caseId}`);
         // The wake-up event rides the chat channel (see the events declaration for
         // why): a structured message the agent recognizes, a turn the user can watch.
-        string token = check claimAgent.sendData(c.workflowId, "chat",
+        string|error caseToken = claimAgent.sendData(c.workflowId, "chat",
             string `[case-submitted] Case ${caseId} for claim ${c.claimId}: document attached (${submission.url}).`);
+        if caseToken is error {
+            return check self.conversationEnded(c.workflowId, caseToken);
+        }
+        string token = caseToken;
         _ = check db->execute(`INSERT INTO agent_turns (conversation_id, who, text)
             VALUES (${c.workflowId}, 'me', ${"📎 Attached the document to case " + caseId})`);
         _ = check db->execute(`INSERT INTO agent_turns (conversation_id, who, token, pending)
@@ -302,9 +306,11 @@ service /agent on new http:Listener(8080) {
 
     # One user turn: durably delivered, correlated by the returned token, and recorded —
     # the user's words and the pending reply slot both land in the application database.
+    # A send into a run that no longer accepts one answers 410 with a sentence the portal
+    # can show, never a raw engine error.
     resource function post conversations/[string id]/messages(
             @http:Header string? authorization, NewMessage m)
-            returns json|http:Unauthorized|error {
+            returns json|http:Unauthorized|http:Response|error {
         Caller|http:Unauthorized caller = authenticate(authorization);
         if caller is http:Unauthorized {
             return caller;
@@ -313,12 +319,39 @@ service /agent on new http:Listener(8080) {
         if !owned {
             return <http:Unauthorized>{body: {message: "Not your conversation"}};
         }
-        string token = check claimAgent.sendData(id, "chat", m.message);
+        string|error token = claimAgent.sendData(id, "chat", m.message);
+        if token is error {
+            return check self.conversationEnded(id, token);
+        }
         _ = check db->execute(`INSERT INTO agent_turns (conversation_id, who, text)
             VALUES (${id}, 'me', ${m.message})`);
         _ = check db->execute(`INSERT INTO agent_turns (conversation_id, who, token, pending)
             VALUES (${id}, 'agent', ${token}, TRUE)`);
         return {token: token};
+    }
+
+    # Marks the conversation CLOSED and answers 410 with a reason a person can read.
+    # The engine's words classify the ending: a timeout reads differently from a run
+    # that finished, and both read differently from one whose history has aged out.
+    isolated function conversationEnded(string id, error cause) returns http:Response|error {
+        string msg = cause.message().toLowerAscii();
+        string reason;
+        if msg.includes("timed out") || msg.includes("timeout") {
+            reason = "This conversation timed out while waiting — start a new chat.";
+        } else if msg.includes("not found") {
+            reason = "This conversation's run is no longer available — start a new chat.";
+        } else if msg.includes("completed") || msg.includes("closed") || msg.includes("ended") {
+            reason = "This conversation has finished — start a new chat.";
+        } else {
+            reason = "This conversation has ended — start a new chat.";
+        }
+        _ = check db->execute(`UPDATE agent_conversations SET status = 'CLOSED'
+            WHERE conversation_id = ${id}`);
+        log:printWarn("chat operation on an ended conversation", conversation = id, 'error = cause);
+        http:Response res = new;
+        res.statusCode = 410;
+        res.setJsonPayload({ended: true, message: reason});
+        return res;
     }
 
     # The reply for one turn, as a long poll: waitForDataResult durably blocks until the
@@ -334,17 +367,15 @@ service /agent on new http:Listener(8080) {
         string|error reply = claimAgent.waitForDataResult(id, token);
         http:Response res = new;
         if reply is error {
-            // The run ended without answering this turn — failed, terminated, or
-            // concluded. Close the turn out so the portal stops waiting on it.
-            string reason = "The agent run has ended; start a new AI claim.";
+            // The run ended without answering this turn — timed out, failed, terminated,
+            // or concluded. Close the turn out with the classified reason so the portal
+            // stops waiting on it and the transcript says what actually happened.
+            http:Response ended = check self.conversationEnded(id, reply);
+            json payload = check ended.getJsonPayload();
+            string reason = check payload.message;
             _ = check db->execute(`UPDATE agent_turns SET text = ${reason}, pending = FALSE
                 WHERE conversation_id = ${id} AND token = ${token}`);
-            _ = check db->execute(`UPDATE agent_conversations SET status = 'CLOSED'
-                WHERE conversation_id = ${id}`);
-            log:printWarn("agent turn unanswered", 'error = reply);
-            res.statusCode = 410;
-            res.setJsonPayload({ended: true, message: reason});
-            return res;
+            return ended;
         }
         _ = check db->execute(`UPDATE agent_turns SET text = ${reply}, pending = FALSE
             WHERE conversation_id = ${id} AND token = ${token}`);
