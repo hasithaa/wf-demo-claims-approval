@@ -1,0 +1,49 @@
+# CLUSTER overlay: a second ICP node on the shared database, behind a per-request
+# round-robin edge. Applied by build_cluster.sh, which persists
+# COMPOSE_FILE=docker-compose.yml:docker-compose.cluster.yml into .env so every later
+# `docker compose` call — the housekeeping scripts included — sees the whole cluster.
+#
+# The second node is deliberately a clone of the first (same image, same database, same
+# SSO config): the ICP is stateless by design, and the pair sharing icp_db through the
+# database-backed workflow tunnel is exactly the deployment shape under demonstration.
+
+volumes:
+  icp2-logs:
+
+services:
+  icp-2:
+    image: claimflow/icp:local
+    networks: [icp-net]
+    environment:
+      JAVA_TOOL_OPTIONS: -Xmx${ICP_HEAP:-512m}
+      ICP_NODE_ID: icp-2
+      ICP_DB_HOST: postgres
+      ICP_DB_NAME: ${ICP_DB_NAME:-icp_db}
+      ICP_DB_USER: ${ICP_DB_USER:-icp_user}
+      ICP_DB_PASSWORD: ${ICP_DB_PASSWORD:-icp_password}
+      ICP_PUBLIC_BASE_URL: ${ICP_PUBLIC_BASE_URL:-https://localhost:9664}
+      SSO_ENABLED: ${SSO_ENABLED:-true}
+      THUNDER_PUBLIC_URL: ${THUNDER_PUBLIC_URL:-https://localhost:8090}
+      THUNDER_INTERNAL_URL: https://thunder:8090
+      ICP_SSO_CLIENT_SECRET: ${ICP_SSO_CLIENT_SECRET:-icp-console-secret}
+    volumes:
+      - icp2-logs:/opt/icp/logs
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sk https://localhost:9446/auth/capabilities >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  edge:
+    volumes:
+      - ./edge/nginx.cluster.conf:/etc/nginx/nginx.conf:ro
+      - ./edge/certs:/etc/nginx/certs:ro
+    depends_on:
+      icp:
+        condition: service_started
+      icp-2:
+        condition: service_started

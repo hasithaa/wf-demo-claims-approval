@@ -141,15 +141,44 @@ The ICP never connects to an integration: commands are delivered inside heartbea
 the `seed` service waits for the ICP, mints one org secret per integration into a shared
 volume, and each integration's entrypoint waits for its file.
 
+## Two ICP nodes, if you want to show the cluster
+
+The control plane is stateless by design: nodes share a database, and workflow management
+travels through cache tables rather than through any one node's memory. `build_cluster.sh`
+puts that shape on screen.
+
+```sh
+./build_cluster.sh          # second node + a per-request round-robin edge
+./build_cluster.sh --down   # back to the single-node demo
+```
+
+What changes: `icp-2` joins on the **same** `icp_db`, and the edge swaps its TCP
+passthrough for an HTTPS reverse proxy that balances every *request* (`edge/nginx.cluster.conf`).
+The distinction matters — a TCP proxy balances per *connection*, and keep-alive would then
+pin each client to one node for the life of its connection, which looks like a cluster and
+behaves like a single server. Nothing else moves: same console URL, same integrations, same
+portal.
+
+The mode is persisted as `COMPOSE_FILE` in `.env`, so every later `docker compose` call —
+the housekeeping scripts included — sees both nodes. The script proves the balancing before
+it reports success, and `docker compose logs -f edge` shows which node served each request.
+
+What you are watching: the node that accepts a console request is routinely *not* the node
+that answers the runtime's next heartbeat. A read is accepted by one node, claimed by
+whichever node hears the next heartbeat, and served from the shared cache to whichever node
+the poll lands on. Killing one node mid-read is a demo in itself — the survivor serves it.
+
 ## Repository layout
 
 ```
 prebuilt/        the unreleased binaries this demo runs (see prebuilt/MANIFEST.md)
 build.sh         builds everything inside Docker; the only build command
+build_cluster.sh switches the ICP between one node and two (see above)
 docker-compose.yml
+docker-compose.cluster.yml   the second node + the balanced edge
 icp/             ICP runtime image (unpacks the prebuilt zip)
 db/initdb/       Postgres first-boot scripts (apply the zip's own schema)
-edge/            the gateway config
+edge/            the gateway config (nginx.conf single-node, nginx.cluster.conf balanced)
 seed/            first-boot secret minting
 integrations/
   claims/         the claim workflow + the portal API (submit, my claims, tasks, decide)
