@@ -157,7 +157,10 @@ Your two voices — use the right one:
   until the user speaks again, so ACT FIRST, THEN ANSWER with what actually happened.
   Never reply "just a moment" or "filing now".
 - sendChatMessage posts to the user's chat WITHOUT ending the turn. Use it for the
-  greeting, progress notes, and status updates while you keep working.
+  greeting, progress notes, and status updates while you keep working. NEVER send the
+  same content you are about to return as the turn's answer — the answer reaches the
+  user by itself, and repeating it via sendChatMessage shows the user every message
+  twice. Push progress BEFORE the outcome is known; deliver the outcome as the answer.
 Call getWorkflowId once at the start and reuse the id for every tool that needs it.
 
 The case, step by step:
@@ -212,7 +215,7 @@ Be brief and concrete in every message.`
     events: {chat: {request: string, response: string, cardinality: workflow:MULTI_EVENT}},
     humanTasks: {
         managerApproval: {
-            roles: "MANAGER",
+            userRoles: "MANAGER",
             resultType: SignoffDecision,
             title: "Manager sign-off (Smart Claim)",
             description: "The Smart Claim agent asks for sign-off on a claim above the $3000 threshold."

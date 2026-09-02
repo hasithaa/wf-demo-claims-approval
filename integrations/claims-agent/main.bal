@@ -163,7 +163,7 @@ type PortalTask record {|
     string startTime;
     string[] userRoles;
     string parentWorkflowId;
-    map<json>? payload;
+    map<json>? taskInput;
 |};
 
 // ── The chat API the Smart Claim portal drives ────────────────────────────────
@@ -377,6 +377,15 @@ service /agent on new http:Listener(8080) {
                 WHERE conversation_id = ${id} AND token = ${token}`);
             return ended;
         }
+        // The model sometimes pushes its final answer through sendChatMessage AND returns
+        // it as the turn's reply — every message then renders twice. The pushed copy is a
+        // row with no token inserted after this turn's slot; when the reply arrives with
+        // identical text, that copy is the duplicate, and the reply row is the keeper.
+        _ = check db->execute(`DELETE FROM agent_turns
+            WHERE conversation_id = ${id} AND who = 'agent' AND token IS NULL
+              AND text = ${reply}
+              AND id > (SELECT id FROM agent_turns
+                          WHERE conversation_id = ${id} AND token = ${token})`);
         _ = check db->execute(`UPDATE agent_turns SET text = ${reply}, pending = FALSE
             WHERE conversation_id = ${id} AND token = ${token}`);
         res.setJsonPayload({reply: reply});
@@ -437,13 +446,13 @@ service /agent on new http:Listener(8080) {
                 continue;
             }
             management:HumanTaskInfo|error info = management:getHumanTaskInfo(t.taskId);
-            // The native layer hands the payload back as map<anydata> even though the
+            // The native layer hands the task input back as map<anydata> even though the
             // record says map<json> — assigning it directly is a runtime type panic.
-            map<json>? payload = ();
+            map<json>? taskInput = ();
             if info is management:HumanTaskInfo {
-                json coerced = (info.payload).toJson();
+                json coerced = (info.taskInput).toJson();
                 if coerced is map<json> {
-                    payload = coerced;
+                    taskInput = coerced;
                 }
             }
             mine.push({
@@ -453,7 +462,7 @@ service /agent on new http:Listener(8080) {
                 startTime: t.startTime,
                 userRoles: t.userRoles,
                 parentWorkflowId: t.parentWorkflowId,
-                payload: payload
+                taskInput: taskInput
             });
         }
         return mine;

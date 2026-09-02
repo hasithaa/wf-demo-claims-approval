@@ -541,7 +541,7 @@ async function renderTasks() {
     ? '<div class="empty"><span class="big">✅</span>Nothing waiting on you.</div>'
     : reviewList + rows.map((t) => {
       const payment = t.userRoles.includes('ACCOUNTANT');
-      const p = t.payload || {};
+      const p = t.taskInput || {};
       const facts = ['claimId', 'amount', 'submittedBy', 'payee', 'validation']
         .filter((k) => p[k] !== undefined && p[k] !== null)
         .map((k) => `<span class="muted">${esc(k)}: <b>${esc(p[k])}</b></span>`).join(' · ');

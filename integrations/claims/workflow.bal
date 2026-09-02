@@ -56,7 +56,7 @@ type ClaimResult record {|
 
 # A claim from submission to payment. Parks on the manager's review; when the manager
 # requests a bill, parks again on the `billUploaded` event and reviews once more with
-# the bill in the payload.
+# the bill in the task input.
 @workflow:Workflow
 function claimApproval(workflow:Context ctx, Claim claim,
         record {|future<json> billUploaded;|} events) returns ClaimResult|error {
@@ -66,8 +66,8 @@ function claimApproval(workflow:Context ctx, Claim claim,
     Validation v = check ctx->callActivity(validateClaim,
         {"id": claim.id, "amount": claim.amount});
 
-    ReviewDecision decision = check ctx->awaitHumanTask("reviewClaim", userRoles = "MANAGER",
-        payload = {
+    ReviewDecision decision = check ctx->awaitHumanTask("reviewClaim",
+        {
             "claimId": claim.id,
             "amount": claim.amount,
             "submittedBy": claim.submittedBy,
@@ -75,7 +75,7 @@ function claimApproval(workflow:Context ctx, Claim claim,
             "billUrl": claim?.billUrl,
             "validation": v.note
         },
-        title = "Review claim " + claim.id);
+        userRoles = "MANAGER", title = "Review claim " + claim.id);
 
     if decision.outcome == "REQUEST_BILL" {
         string _billAsked = check ctx->callActivity(recordClaimState,
@@ -89,14 +89,14 @@ function claimApproval(workflow:Context ctx, Claim claim,
         claim.billUrl = billUrl;
         string _billIn = check ctx->callActivity(recordClaimState,
             {"claim": claim, "workflowId": wfId, "status": "BILL_ATTACHED", "note": ()});
-        decision = check ctx->awaitHumanTask("reviewClaimWithBill", userRoles = "MANAGER",
-            payload = {
+        decision = check ctx->awaitHumanTask("reviewClaimWithBill",
+            {
                 "claimId": claim.id,
                 "amount": claim.amount,
                 "submittedBy": claim.submittedBy,
                 "bill": bill
             },
-            title = "Review claim " + claim.id + " (bill attached)");
+            userRoles = "MANAGER", title = "Review claim " + claim.id + " (bill attached)");
     }
 
     if decision.outcome != "APPROVE" {
@@ -109,9 +109,9 @@ function claimApproval(workflow:Context ctx, Claim claim,
     }
 
     // The money moves only after an accountant releases it.
-    PayApproval pay = check ctx->awaitHumanTask("approvePayment", userRoles = "ACCOUNTANT",
-        payload = {"claimId": claim.id, "amount": claim.amount, "payee": claim.submittedBy},
-        title = "Approve payment for claim " + claim.id);
+    PayApproval pay = check ctx->awaitHumanTask("approvePayment",
+        {"claimId": claim.id, "amount": claim.amount, "payee": claim.submittedBy},
+        userRoles = "ACCOUNTANT", title = "Approve payment for claim " + claim.id);
     if !pay.approved {
         string _pr = check ctx->callActivity(recordClaimState,
             {"claim": claim, "workflowId": wfId, "status": "PAYMENT_REFUSED", "note": pay?.comment});

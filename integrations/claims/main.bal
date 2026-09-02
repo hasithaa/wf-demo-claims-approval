@@ -127,7 +127,7 @@ type PortalTask record {|
     string startTime;
     string[] userRoles;
     string parentWorkflowId;
-    map<json>? payload;
+    map<json>? taskInput;
 |};
 
 // The claims API: the bill inlet and the durable listing live here because events and
@@ -208,13 +208,13 @@ service /claims on new http:Listener(8080) {
                 continue;
             }
             management:HumanTaskInfo|error info = management:getHumanTaskInfo(t.taskId);
-            // The native layer hands the payload back as map<anydata> even though the
+            // The native layer hands the task input back as map<anydata> even though the
             // record says map<json> — assigning it directly is a runtime type panic.
-            map<json>? payload = ();
+            map<json>? taskInput = ();
             if info is management:HumanTaskInfo {
-                json coerced = (info.payload).toJson();
+                json coerced = (info.taskInput).toJson();
                 if coerced is map<json> {
-                    payload = coerced;
+                    taskInput = coerced;
                 }
             }
             mine.push({
@@ -224,7 +224,7 @@ service /claims on new http:Listener(8080) {
                 startTime: t.startTime,
                 userRoles: t.userRoles,
                 parentWorkflowId: t.parentWorkflowId,
-                payload: payload
+                taskInput: taskInput
             });
         }
         return mine;
