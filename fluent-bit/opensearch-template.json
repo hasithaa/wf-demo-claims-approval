@@ -1,0 +1,17 @@
+{
+  "index_patterns": ["ballerina-application-logs-*"],
+  "template": {
+    "mappings": {
+      "properties": {
+        "@timestamp":    {"type": "date"},
+        "icp_runtimeId": {"type": "keyword"},
+        "level":         {"type": "keyword"},
+        "app_name":      {"type": "keyword"},
+        "module":        {"type": "keyword"},
+        "service_type":  {"type": "keyword"},
+        "product":       {"type": "keyword"},
+        "message":       {"type": "text"}
+      }
+    }
+  }
+}

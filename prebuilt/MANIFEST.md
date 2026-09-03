@@ -18,6 +18,15 @@ integration builds with `observabilityIncluded = true` and links `ballerinax/pro
 Config.toml enables the metrics reporter, and the compose file gains a `prometheus`
 service scraping all four integrations on :9797 (UI at `http://localhost:9095`).
 
+The full observability build adds the other two planes: traces publish over OTLP to a
+`jaeger` service (UI at `http://localhost:16686`), and the console's Observability tab is
+live — the integrations log through Docker's fluentd driver into `fluent-bit`, which parses
+the Ballerina log line and indexes `ballerina-application-logs-*` in `opensearch` with the
+`icp_runtimeId` the tab scopes by (a one-shot `opensearch-init` installs the keyword-mapped
+index template first). The tab's metrics view stays empty by design: it reads
+`ballerina-metrics-logs-*`, produced by the BI runtime's own metrics publisher, which this
+stack does not carry — Prometheus is the metrics surface.
+
 ## Rebuilding
 
 Check out the branch named above and:

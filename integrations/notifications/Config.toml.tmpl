@@ -25,3 +25,9 @@ enableWorkflowManagement = false
 [ballerina.observe]
 metricsEnabled = true
 metricsReporter = "prometheus"
+tracingEnabled = true
+tracingProvider = "jaeger"
+
+[ballerinax.jaeger]
+agentHostname = "jaeger"
+agentPort = 4317

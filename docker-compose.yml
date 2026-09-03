@@ -15,6 +15,7 @@ networks:
     name: claimflow-integration-net
 
 volumes:
+  opensearch-data:
   postgres-data:
   temporal-postgres-data:
   appdb-data:
@@ -255,6 +256,14 @@ services:
     build:
       context: ./integrations/claims
     image: claimflow/claims:local
+    # Logs flow to fluent-bit -> OpenSearch for the console's Observability tab; Docker's
+    # dual logging keeps `docker compose logs` working beside the driver.
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: 127.0.0.1:24224
+        fluentd-async: "true"
+        tag: claimflow.claims
     # A scrape that lands during runtime startup can kill the process (the closed-connection
     # error is fatal only in that window); the restart makes the race a blip, not an outage.
     restart: unless-stopped
@@ -287,6 +296,14 @@ services:
     build:
       context: ./integrations/claims-agent
     image: claimflow/claims-agent:local
+    # Logs flow to fluent-bit -> OpenSearch for the console's Observability tab; Docker's
+    # dual logging keeps `docker compose logs` working beside the driver.
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: 127.0.0.1:24224
+        fluentd-async: "true"
+        tag: claimflow.claims-agent
     # A scrape that lands during runtime startup can kill the process (the closed-connection
     # error is fatal only in that window); the restart makes the race a blip, not an outage.
     restart: unless-stopped
@@ -320,6 +337,14 @@ services:
     build:
       context: ./integrations/bill-store
     image: claimflow/bill-store:local
+    # Logs flow to fluent-bit -> OpenSearch for the console's Observability tab; Docker's
+    # dual logging keeps `docker compose logs` working beside the driver.
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: 127.0.0.1:24224
+        fluentd-async: "true"
+        tag: claimflow.bill-store
     # A scrape that lands during runtime startup can kill the process (the closed-connection
     # error is fatal only in that window); the restart makes the race a blip, not an outage.
     restart: unless-stopped
@@ -348,6 +373,14 @@ services:
     build:
       context: ./integrations/notifications
     image: claimflow/notifications:local
+    # Logs flow to fluent-bit -> OpenSearch for the console's Observability tab; Docker's
+    # dual logging keeps `docker compose logs` working beside the driver.
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: 127.0.0.1:24224
+        fluentd-async: "true"
+        tag: claimflow.notifications
     # A scrape that lands during runtime startup can kill the process (the closed-connection
     # error is fatal only in that window); the restart makes the race a blip, not an outage.
     restart: unless-stopped
@@ -387,3 +420,62 @@ services:
     depends_on:
       - claims
       - claims-agent
+
+  # Traces: the integrations publish workflow spans over OTLP. UI at
+  # http://localhost:${JAEGER_PORT:-16686}.
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    networks: [integration-net]
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "${JAEGER_PORT:-16686}:16686"
+
+  # Log store behind the ICP console's Observability tab. Single node, security off —
+  # this is demo data on a laptop, and the ICP's client ignores TLS anyway.
+  opensearch:
+    image: opensearchproject/opensearch:2.19.1
+    # Both networks: fluent-bit writes from the integration side, the ICP queries from its own.
+    networks: [integration-net, icp-net]
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # Receives the integrations' logs (Docker fluentd driver, tag claimflow.<service>),
+  # parses the Ballerina log line, and indexes ballerina-application-logs-* for the tab.
+  fluent-bit:
+    image: fluent/fluent-bit:3.1
+    networks: [integration-net]
+    ports:
+      # The Docker daemon delivers driver logs from the host side, so the port is published.
+      - "127.0.0.1:24224:24224"
+    volumes:
+      - ./fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ./fluent-bit/parsers.conf:/fluent-bit/etc/parsers.conf:ro
+      - ./fluent-bit/enrich.lua:/fluent-bit/etc/enrich.lua:ro
+    depends_on:
+      opensearch:
+        condition: service_healthy
+      opensearch-init:
+        condition: service_completed_successfully
+
+  # One-shot: installs the index template the ICP's adapter queries against (keyword-mapped
+  # icp_runtimeId/level), before the first log document freezes a dynamic mapping instead.
+  opensearch-init:
+    image: curlimages/curl:8.10.1
+    networks: [integration-net]
+    volumes:
+      - ./fluent-bit/opensearch-template.json:/template.json:ro
+    entrypoint: ["sh", "-c", "curl -sf -X PUT http://opensearch:9200/_index_template/ballerina-application-logs -H 'Content-Type: application/json' -d @/template.json && echo template installed"]
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    restart: "no"
