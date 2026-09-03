@@ -19,4 +19,4 @@ version = "0.3.0-SNAPSHOT"
 repository = "local"
 
 [build-options]
-observabilityIncluded = false
+observabilityIncluded = true

@@ -6,30 +6,17 @@ them; nothing needs to be built from these sources.
 
 | Artifact | Source | Commit |
 |---|---|---|
-| `wso2-integration-control-plane-2.0.0-SNAPSHOT.zip` | `hasithaa/integration-control-plane` @ `workflow-instance-graph-connfix` (PR wso2#851 + the connection-pool hardening of wso2#859) | `a07fa3403` — 2026-09-02 |
-| `ballerina-workflow-java21-0.9.0.bala` | `hasithaa/fork-module-ballerina-workflow` @ `humantask-options` + `model-activity-retry` (PRs ballerina-platform#102 + #103, local merge `demo-bala-taskinput`) | `c562d4a` — 2026-09-02 |
-| `wso2-icp.runtime.bridge-java21-0.3.0-SNAPSHOT.bala` | `hasithaa/icp-runtime-bridge` @ `management-reset` (PR wso2#44 and later) | `0278ab5` — 2026-09-02 |
+| `wso2-integration-control-plane-2.0.0-SNAPSHOT.zip` | `hasithaa/integration-control-plane`, local merge `icp-demo-obs` = main + `workflow-instance-graph` (PR wso2#851) + `icp-connection-hardening` (PR wso2#859) | `08420a449` — 2026-09-03 |
+| `ballerina-workflow-java21-0.9.0.bala` | `hasithaa/fork-module-ballerina-workflow`, local merge `demo-bala-obs` = main + `humantask-taskinput` (PR ballerina-platform#105) + `observability-integration` (PR ballerina-platform#106) | `4e9a063` — 2026-09-03 |
+| `wso2-icp.runtime.bridge-java21-0.3.0-SNAPSHOT.bala` | `hasithaa/icp-runtime-bridge` @ `management-reset` (PR wso2#44 and later, incl. the heartbeat-guard fix) | `0278ab5` — 2026-09-02 |
 
-The module comes from the PR stack rather than `main` deliberately: the console's unified
-work queue calls `workItems.list`, which exists only on that stack — and this build adds
-#102's options records (`awaitHumanTask`/`callActivity` forward-compatible option shapes)
-plus #103's automatic retry for the built-in model activities.
-
-The 2026-09-02 rebuild carries three stability fixes found by running this demo, all on the
-branches above:
-
-- **ICP** resolves a heartbeat's environment with `queryRow` instead of consuming a stream.
-  The stream returned its connection only on the paths that reached the end of it, so a
-  failing heartbeat leaked one; ten leaks retired the Hikari pool and every request that
-  needed the database timed out after 30s — including `/auth/login`.
-- **The bridge** releases its heartbeat overlap guard on every path, panic included. One tick
-  that died used to leave the guard held, and the runtime then never heartbeated again — it
-  was swept OFFLINE and stayed there, which the console shows as an empty task list.
-- **The bridge** states a 15s request timeout, so an ICP holding a request open costs a few
-  skipped ticks rather than the registration.
-
-This module build also renames the human task's `payload` to `taskInput`, which is why the
-integrations here pass the task input positionally and read `HumanTaskInfo.taskInput`.
+Every open PR the demo depends on rides in these builds: #105 (taskInput rename +
+deprecation removal), #106 (observability — metrics and tracing), wso2#851 (the workflow
+console UX), wso2#859 (connection hardening + the pool-leak fix), and the bridge's
+heartbeat-guard release. The 2026-09-03 build also turns observability on: every
+integration builds with `observabilityIncluded = true` and links `ballerinax/prometheus`,
+Config.toml enables the metrics reporter, and the compose file gains a `prometheus`
+service scraping all four integrations on :9797 (UI at `http://localhost:9095`).
 
 ## Rebuilding
 

@@ -21,3 +21,10 @@ environment = "@ICP_ENVIRONMENT@"
 
 # A plain service: registers and reports artifacts, accepts no workflow commands.
 enableWorkflowManagement = false
+
+# ── Observability ──────────────────────────────────────────────────────────────
+# The Prometheus reporter (ballerinax/prometheus) serves /metrics on 0.0.0.0:9797,
+# its own defaults; the demo's prometheus service scrapes every integration there.
+[ballerina.observe]
+metricsEnabled = true
+metricsReporter = "prometheus"

@@ -33,3 +33,10 @@ environment = "@ICP_ENVIRONMENT@"
 # commands — and, since management is this integration's only entry point for now, the
 # process would also exit as soon as it finished registering.
 enableWorkflowManagement = true
+
+# ── Observability ──────────────────────────────────────────────────────────────
+# The Prometheus reporter (ballerinax/prometheus) serves /metrics on 0.0.0.0:9797,
+# its own defaults; the demo's prometheus service scrapes every integration there.
+[ballerina.observe]
+metricsEnabled = true
+metricsReporter = "prometheus"

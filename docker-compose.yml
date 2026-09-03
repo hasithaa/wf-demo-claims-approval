@@ -255,6 +255,9 @@ services:
     build:
       context: ./integrations/claims
     image: claimflow/claims:local
+    # A scrape that lands during runtime startup can kill the process (the closed-connection
+    # error is fatal only in that window); the restart makes the race a blip, not an outage.
+    restart: unless-stopped
     networks: [integration-net]
     environment:
       JAVA_TOOL_OPTIONS: -Xmx${INTEGRATION_HEAP:-384m}
@@ -284,6 +287,9 @@ services:
     build:
       context: ./integrations/claims-agent
     image: claimflow/claims-agent:local
+    # A scrape that lands during runtime startup can kill the process (the closed-connection
+    # error is fatal only in that window); the restart makes the race a blip, not an outage.
+    restart: unless-stopped
     networks: [integration-net]
     environment:
       JAVA_TOOL_OPTIONS: -Xmx${INTEGRATION_HEAP:-384m}
@@ -314,6 +320,9 @@ services:
     build:
       context: ./integrations/bill-store
     image: claimflow/bill-store:local
+    # A scrape that lands during runtime startup can kill the process (the closed-connection
+    # error is fatal only in that window); the restart makes the race a blip, not an outage.
+    restart: unless-stopped
     networks: [integration-net]
     environment:
       JAVA_TOOL_OPTIONS: -Xmx${INTEGRATION_HEAP:-384m}
@@ -339,6 +348,9 @@ services:
     build:
       context: ./integrations/notifications
     image: claimflow/notifications:local
+    # A scrape that lands during runtime startup can kill the process (the closed-connection
+    # error is fatal only in that window); the restart makes the race a blip, not an outage.
+    restart: unless-stopped
     networks: [integration-net]
     environment:
       JAVA_TOOL_OPTIONS: -Xmx${INTEGRATION_HEAP:-384m}
@@ -357,3 +369,21 @@ services:
         condition: service_healthy
       edge:
         condition: service_started
+
+  # ── Observability ──────────────────────────────────────────────────────────
+  # Scrapes every integration's workflow metrics (ballerinax/prometheus reporter,
+  # :9797 inside the network). UI at http://localhost:${PROMETHEUS_PORT:-9095}.
+  prometheus:
+    image: prom/prometheus:v2.53.4
+    networks: [integration-net]
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      # The demo is disposable; a short retention keeps the volume irrelevant.
+      - --storage.tsdb.retention.time=2d
+    ports:
+      - "${PROMETHEUS_PORT:-9095}:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - claims
+      - claims-agent
