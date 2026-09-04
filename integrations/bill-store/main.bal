@@ -92,7 +92,7 @@ service /bills on new http:Listener(8080) {
     resource function post [string id]/attach(AttachRequest req) returns json|error {
         Bill bill = check self.meta(id);
         json body = {url: publicBaseUrl + "/bills/" + id, note: bill.filename};
-        json _forwarded = check claims->post("/claims/" + req.workflowId + "/bills", body);
+        json attachAck = check claims->post("/claims/" + req.workflowId + "/bills", body);
         _ = check db->execute(`UPDATE bills SET status = 'ATTACHED',
             claim_id = COALESCE(${req?.claimId}, claim_id) WHERE bill_id = ${id}`);
         return {attached: true, billId: id, workflowId: req.workflowId};

@@ -61,7 +61,7 @@ type ClaimResult record {|
 function claimApproval(workflow:Context ctx, Claim claim,
         record {|future<json> billUploaded;|} events) returns ClaimResult|error {
     string wfId = check ctx.getWorkflowId();
-    string _submitted = check ctx->callActivity(recordClaimState,
+    string submittedState = check ctx->callActivity(recordClaimState,
         {"claim": claim, "workflowId": wfId, "status": "SUBMITTED", "note": ()});
     Validation v = check ctx->callActivity(validateClaim,
         {"id": claim.id, "amount": claim.amount});
@@ -78,16 +78,16 @@ function claimApproval(workflow:Context ctx, Claim claim,
         userRoles = "MANAGER", title = "Review claim " + claim.id);
 
     if decision.outcome == "REQUEST_BILL" {
-        string _billAsked = check ctx->callActivity(recordClaimState,
+        string billRequestedState = check ctx->callActivity(recordClaimState,
             {"claim": claim, "workflowId": wfId, "status": "BILL_REQUESTED", "note": decision?.comment});
-        string _billAsk = check ctx->callActivity(notifyUser,
+        string billRequestNotice = check ctx->callActivity(notifyUser,
             {"user": claim.submittedBy, "title": "A bill is required for claim " + claim.id,
                 "body": decision?.comment, "link": ()});
         // Parks until a bill is attached (the bill store's URL travels in the event).
         json bill = check wait events.billUploaded;
         string billUrl = check bill.url;
         claim.billUrl = billUrl;
-        string _billIn = check ctx->callActivity(recordClaimState,
+        string billAttachedState = check ctx->callActivity(recordClaimState,
             {"claim": claim, "workflowId": wfId, "status": "BILL_ATTACHED", "note": ()});
         decision = check ctx->awaitHumanTask("reviewClaimWithBill",
             {
@@ -100,9 +100,9 @@ function claimApproval(workflow:Context ctx, Claim claim,
     }
 
     if decision.outcome != "APPROVE" {
-        string _r = check ctx->callActivity(recordClaimState,
+        string rejectedState = check ctx->callActivity(recordClaimState,
             {"claim": claim, "workflowId": wfId, "status": "REJECTED", "note": decision?.comment});
-        string _rejected = check ctx->callActivity(notifyUser,
+        string rejectionNotice = check ctx->callActivity(notifyUser,
             {"user": claim.submittedBy, "title": "Claim " + claim.id + " was rejected",
                 "body": decision?.comment, "link": ()});
         return {claimId: claim.id, status: "REJECTED", reason: decision?.comment};
@@ -113,9 +113,9 @@ function claimApproval(workflow:Context ctx, Claim claim,
         {"claimId": claim.id, "amount": claim.amount, "payee": claim.submittedBy},
         userRoles = "ACCOUNTANT", title = "Approve payment for claim " + claim.id);
     if !pay.approved {
-        string _pr = check ctx->callActivity(recordClaimState,
+        string refusedState = check ctx->callActivity(recordClaimState,
             {"claim": claim, "workflowId": wfId, "status": "PAYMENT_REFUSED", "note": pay?.comment});
-        string _refused = check ctx->callActivity(notifyUser,
+        string refusalNotice = check ctx->callActivity(notifyUser,
             {"user": claim.submittedBy, "title": "Payment for claim " + claim.id + " was refused",
                 "body": pay?.comment, "link": ()});
         return {claimId: claim.id, status: "REJECTED", reason: pay?.comment};
@@ -123,9 +123,9 @@ function claimApproval(workflow:Context ctx, Claim claim,
 
     Receipt receipt = check ctx->callActivity(executePayment,
         {"claimId": claim.id, "amount": claim.amount, "account": pay?.account});
-    string _paidState = check ctx->callActivity(recordClaimState,
+    string paidState = check ctx->callActivity(recordClaimState,
         {"claim": claim, "workflowId": wfId, "status": "PAID", "note": receipt.reference});
-    string _paid = check ctx->callActivity(notifyUser,
+    string paymentNotice = check ctx->callActivity(notifyUser,
         {"user": claim.submittedBy, "title": "Claim " + claim.id + " paid",
             "body": "Reference " + receipt.reference, "link": ()});
     return {claimId: claim.id, status: "PAID", reference: receipt.reference};
