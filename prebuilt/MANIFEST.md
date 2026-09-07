@@ -6,26 +6,20 @@ them; nothing needs to be built from these sources.
 
 | Artifact | Source | Commit |
 |---|---|---|
-| `wso2-integration-control-plane-2.0.0-SNAPSHOT.zip` | `hasithaa/integration-control-plane`, local merge `icp-demo-obs` = main + `workflow-instance-graph` (PR wso2#851) + `icp-connection-hardening` (PR wso2#859) | `533872904` — 2026-09-07 (adds the serialized heartbeat transaction; see ballerina-library#9129) |
-| `ballerina-workflow-java21-0.9.0.bala` | `hasithaa/fork-module-ballerina-workflow`, local merge `demo-bala-obs` = main + `humantask-taskinput` (PR ballerina-platform#105) + `observability-integration` (PR ballerina-platform#106) | `4e9a063` — 2026-09-03 |
+| `wso2-integration-control-plane-2.0.0-SNAPSHOT.zip` | `hasithaa/integration-control-plane`, local merge `icp-demo-obs` = main + `workflow-instance-graph` (PR wso2#851) + `icp-connection-hardening` (PR wso2#859) | `eb0cda63e` — 2026-09-07 (review shows its decision; a task's fail is a decision card; serialized heartbeat transaction, ballerina-library#9129) |
+| `ballerina-workflow-java21-0.9.1.bala` | `hasithaa/fork-module-ballerina-workflow` @ `observability-integration` (PR ballerina-platform#106 on top of the released 0.9.0: decision audit trail, content capture, `workflow_task_decisions_total`) | `fad4bec` — 2026-09-07 |
 | `wso2-icp.runtime.bridge-java21-0.3.0-SNAPSHOT.bala` | `hasithaa/icp-runtime-bridge` @ `management-reset` (PR wso2#44 and later, incl. the heartbeat-guard fix) | `0278ab5` — 2026-09-02 |
 
 Every open PR the demo depends on rides in these builds: #105 (taskInput rename +
-deprecation removal), #106 (observability — metrics and tracing), wso2#851 (the workflow
-console UX), wso2#859 (connection hardening + the pool-leak fix), and the bridge's
-heartbeat-guard release. The 2026-09-03 build also turns observability on: every
-integration builds with `observabilityIncluded = true` and links `ballerinax/prometheus`,
-Config.toml enables the metrics reporter, and the compose file gains a `prometheus`
-service scraping all four integrations on :9797 (UI at `http://localhost:9095`).
+deprecation removal), wso2#851 (the workflow console UX — the split-view overview, the
+unified work queue, the agent shape, and now the review's decision + the human-task
+fail-as-decision card), wso2#859 (connection hardening + the pool-leak fix), and the
+bridge's heartbeat-guard release.
 
-The full observability build adds the other two planes: traces publish over OTLP to a
-`jaeger` service (UI at `http://localhost:16686`), and the console's Observability tab is
-live — the integrations log through Docker's fluentd driver into `fluent-bit`, which parses
-the Ballerina log line and indexes `ballerina-application-logs-*` in `opensearch` with the
-`icp_runtimeId` the tab scopes by (a one-shot `opensearch-init` installs the keyword-mapped
-index template first). The tab's metrics view stays empty by design: it reads
-`ballerina-metrics-logs-*`, produced by the BI runtime's own metrics publisher, which this
-stack does not carry — Prometheus is the metrics surface.
+Observability is **not** wired into this demo: the integrations build with
+`observabilityIncluded = false`, link no `ballerinax/prometheus` or `jaeger`, and the
+compose stack carries no prometheus/jaeger/opensearch/fluent-bit services. (The module bala
+still contains the observability capability from #106; the demo simply does not turn it on.)
 
 ## Rebuilding
 

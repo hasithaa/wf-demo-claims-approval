@@ -40,7 +40,7 @@ docker run --rm -v "$HERE":/work -w /work \
     # Re-pushing an existing version is refused; clear our two from the local repo first.
     rm -rf /root/.ballerina/repositories/local/bala/ballerina/workflow \
            /root/.ballerina/repositories/local/bala/wso2/icp.runtime.bridge
-    bal push --repository=local prebuilt/ballerina-workflow-java21-0.9.0.bala
+    bal push --repository=local prebuilt/ballerina-workflow-java21-0.9.1.bala
     bal push --repository=local prebuilt/wso2-icp.runtime.bridge-java21-0.3.0-SNAPSHOT.bala
     for name in '"${INTEGRATIONS[*]}"'; do
         echo "-- bal build integrations/${name}"
