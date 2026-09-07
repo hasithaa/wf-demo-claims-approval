@@ -63,8 +63,11 @@ function claimApproval(workflow:Context ctx, Claim claim,
     string wfId = check ctx.getWorkflowId();
     string submittedState = check ctx->callActivity(recordClaimState,
         {"claim": claim, "workflowId": wfId, "status": "SUBMITTED", "note": ()});
+    // A failed validation does not fail the claim: it raises a review, and the reviewer
+    // either retries as-is or corrects the arguments — the correction is on the record.
     Validation v = check ctx->callActivity(validateClaim,
-        {"id": claim.id, "amount": claim.amount});
+        {"id": claim.id, "amount": claim.amount},
+        retryPolicy = {userRoles: "MANAGER", title: "Review the failed claim validation"});
 
     ReviewDecision decision = check ctx->awaitHumanTask("reviewClaim",
         {

@@ -6,7 +6,7 @@ them; nothing needs to be built from these sources.
 
 | Artifact | Source | Commit |
 |---|---|---|
-| `wso2-integration-control-plane-2.0.0-SNAPSHOT.zip` | `hasithaa/integration-control-plane`, local merge `icp-demo-obs` = main + `workflow-instance-graph` (PR wso2#851) + `icp-connection-hardening` (PR wso2#859) | `08420a449` — 2026-09-03 |
+| `wso2-integration-control-plane-2.0.0-SNAPSHOT.zip` | `hasithaa/integration-control-plane`, local merge `icp-demo-obs` = main + `workflow-instance-graph` (PR wso2#851) + `icp-connection-hardening` (PR wso2#859) | `533872904` — 2026-09-07 (adds the serialized heartbeat transaction; see ballerina-library#9129) |
 | `ballerina-workflow-java21-0.9.0.bala` | `hasithaa/fork-module-ballerina-workflow`, local merge `demo-bala-obs` = main + `humantask-taskinput` (PR ballerina-platform#105) + `observability-integration` (PR ballerina-platform#106) | `4e9a063` — 2026-09-03 |
 | `wso2-icp.runtime.bridge-java21-0.3.0-SNAPSHOT.bala` | `hasithaa/icp-runtime-bridge` @ `management-reset` (PR wso2#44 and later, incl. the heartbeat-guard fix) | `0278ab5` — 2026-09-02 |
 
