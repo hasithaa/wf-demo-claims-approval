@@ -257,7 +257,10 @@ services:
     image: claimflow/claims:local
     networks: [integration-net]
     environment:
-      JAVA_TOOL_OPTIONS: -Xmx${INTEGRATION_HEAP:-384m}
+      # The two extra flags are JDK 25 housekeeping: Netty still reaches for sun.misc.Unsafe and
+      # loads a native library, and without these opt-ins every boot prints deprecation and
+      # native-access warnings. Both are the documented way to say "yes, intended".
+      JAVA_TOOL_OPTIONS: -Xmx${INTEGRATION_HEAP:-384m} --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow
       ICP_SERVER_URL: https://edge:9445
       ICP_ORG_SECRET_FILE: /secrets/claims.secret
       ICP_PROJECT: ${ICP_PROJECT:-claimflow}
@@ -286,7 +289,10 @@ services:
     image: claimflow/claims-agent:local
     networks: [integration-net]
     environment:
-      JAVA_TOOL_OPTIONS: -Xmx${INTEGRATION_HEAP:-384m}
+      # The two extra flags are JDK 25 housekeeping: Netty still reaches for sun.misc.Unsafe and
+      # loads a native library, and without these opt-ins every boot prints deprecation and
+      # native-access warnings. Both are the documented way to say "yes, intended".
+      JAVA_TOOL_OPTIONS: -Xmx${INTEGRATION_HEAP:-384m} --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow
       ICP_SERVER_URL: https://edge:9445
       ICP_ORG_SECRET_FILE: /secrets/claims-agent.secret
       ICP_PROJECT: ${ICP_PROJECT:-claimflow}
@@ -316,7 +322,10 @@ services:
     image: claimflow/bill-store:local
     networks: [integration-net]
     environment:
-      JAVA_TOOL_OPTIONS: -Xmx${INTEGRATION_HEAP:-384m}
+      # The two extra flags are JDK 25 housekeeping: Netty still reaches for sun.misc.Unsafe and
+      # loads a native library, and without these opt-ins every boot prints deprecation and
+      # native-access warnings. Both are the documented way to say "yes, intended".
+      JAVA_TOOL_OPTIONS: -Xmx${INTEGRATION_HEAP:-384m} --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow
       ICP_SERVER_URL: https://edge:9445
       ICP_ORG_SECRET_FILE: /secrets/bill-store.secret
       ICP_PROJECT: ${ICP_PROJECT:-claimflow}
@@ -341,7 +350,10 @@ services:
     image: claimflow/notifications:local
     networks: [integration-net]
     environment:
-      JAVA_TOOL_OPTIONS: -Xmx${INTEGRATION_HEAP:-384m}
+      # The two extra flags are JDK 25 housekeeping: Netty still reaches for sun.misc.Unsafe and
+      # loads a native library, and without these opt-ins every boot prints deprecation and
+      # native-access warnings. Both are the documented way to say "yes, intended".
+      JAVA_TOOL_OPTIONS: -Xmx${INTEGRATION_HEAP:-384m} --enable-native-access=ALL-UNNAMED --sun-misc-unsafe-memory-access=allow
       ICP_SERVER_URL: https://edge:9445
       ICP_ORG_SECRET_FILE: /secrets/notifications.secret
       ICP_PROJECT: ${ICP_PROJECT:-claimflow}
