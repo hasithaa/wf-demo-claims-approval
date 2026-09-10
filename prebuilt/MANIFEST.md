@@ -5,7 +5,7 @@ them prebuilt. `build.sh` consumes them; nothing here needs to be built from sou
 
 | Artifact | Source | Commit |
 |---|---|---|
-| `wso2-integration-control-plane-2.0.0-SNAPSHOT.zip` | `hasithaa/integration-control-plane`, local merge `icp-demo-obs` = upstream main + `workflow-instance-graph` (PR wso2#851) | `7ef7da119` — 2026-09-10 |
+| `wso2-integration-control-plane-2.0.0-SNAPSHOT.zip` | `hasithaa/integration-control-plane`, local merge `icp-demo-obs` = upstream main + `workflow-instance-graph` (PR wso2#851) | `bcb25cfff` — 2026-09-10 |
 | `ballerina-workflow-java21-0.9.1.bala` | `hasithaa/fork-module-ballerina-workflow` @ `observability-integration` (PR ballerina-platform#106 on top of the released 0.9.0) | `fad4bec` — 2026-09-07 |
 | `wso2-icp.runtime.bridge-java21-0.3.0-SNAPSHOT.bala` | `hasithaa/icp-runtime-bridge` @ `main` = upstream main + the heartbeat-guard fix | `0278ab5` — 2026-09-02 |
 
