@@ -40,10 +40,19 @@ docker run --rm -v "$HERE":/work -w /work \
     # Re-pushing an existing version is refused; clear our two from the local repo first.
     rm -rf /root/.ballerina/repositories/local/bala/ballerina/workflow \
            /root/.ballerina/repositories/local/bala/wso2/icp.runtime.bridge
+    # The compiled cache of a locally pushed package is keyed by version alone, so a rebuilt
+    # 0.9.1 bala would otherwise be shadowed by the BIR of the earlier build.
+    rm -rf /root/.ballerina/repositories/local/cache-*/ballerina/workflow \
+           /root/.ballerina/repositories/local/cache-*/wso2/icp.runtime.bridge \
+           /root/.ballerina/repositories/central.ballerina.io/cache-*/ballerina/workflow \
+           /root/.ballerina/repositories/central.ballerina.io/cache-*/wso2/icp.runtime.bridge
     bal push --repository=local prebuilt/ballerina-workflow-java21-0.9.1.bala
     bal push --repository=local prebuilt/wso2-icp.runtime.bridge-java21-0.3.0-SNAPSHOT.bala
     for name in '"${INTEGRATIONS[*]}"'; do
         echo "-- bal build integrations/${name}"
+        # The project keeps its own cache of dependency BIRs under target/; a same-version
+        # rebuild of the module is invisible to it, so start from nothing.
+        rm -rf "integrations/${name}/target"
         (cd "integrations/${name}" && bal build)
         mkdir -p "integrations/${name}/artifacts"
         cp "integrations/${name}"/target/bin/*.jar "integrations/${name}/artifacts/${name}.jar"

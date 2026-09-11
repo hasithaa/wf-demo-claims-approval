@@ -1,0 +1,186 @@
+{
+  "index_patterns": [
+    "ballerina-application-logs-*"
+  ],
+  "template": {
+    "mappings": {
+      "properties": {
+        "@timestamp": {
+          "type": "date"
+        },
+        "time": {
+          "type": "date"
+        },
+        "message": {
+          "type": "text",
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "icp_runtimeId": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "level": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "app_name": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "app": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "deployment": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "app_module": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "module": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "service_type": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "product": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "taskKind": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "taskName": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "action": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "outcome": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "userId": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "userRoles": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "assignedRoles": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,282 @@
+{
+  "index_patterns": [
+    "ballerina-metrics-logs-*"
+  ],
+  "template": {
+    "mappings": {
+      "properties": {
+        "@timestamp": {
+          "type": "date"
+        },
+        "time": {
+          "type": "date"
+        },
+        "message": {
+          "type": "text",
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "icp_runtimeId": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "level": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "app_name": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "app": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "deployment": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "app_module": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "module": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "service_type": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "product": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "integration": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "sublevel": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "status": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "status_code_group": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "method": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "url": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "protocol": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "http_method": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "http_status_code_group": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "src_module": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "src_object_name": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "src_function_name": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "entrypoint_function_name": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "entrypoint_function_module": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "src_client_remote": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "logger": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "response_time_seconds": {
+          "type": "float"
+        },
+        "response_time": {
+          "type": "integer"
+        }
+      }
+    }
+  }
+}

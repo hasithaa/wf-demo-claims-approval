@@ -24,6 +24,9 @@ volumes:
   icp-logs:
   # The seed service writes minted org secrets here; integrations read them.
   org-secrets:
+  opensearch-data:
+  # fluent-bit's on-disk chunk buffer, so an OpenSearch outage loses no log lines.
+  fluent-bit-buffer:
 
 services:
   # ── Control plane ────────────────────────────────────────────────────────────
@@ -255,6 +258,14 @@ services:
     build:
       context: ./integrations/claims
     image: claimflow/claims:local
+    # Logs flow to fluent-bit -> OpenSearch for the console's Observability tab; Docker's
+    # dual logging keeps `docker compose logs` working beside the driver.
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: 127.0.0.1:24225
+        fluentd-async: "true"
+        tag: claimflow.claims
     networks: [integration-net]
     environment:
       # The two extra flags are JDK 25 housekeeping: Netty still reaches for sun.misc.Unsafe and
@@ -287,6 +298,14 @@ services:
     build:
       context: ./integrations/claims-agent
     image: claimflow/claims-agent:local
+    # Logs flow to fluent-bit -> OpenSearch for the console's Observability tab; Docker's
+    # dual logging keeps `docker compose logs` working beside the driver.
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: 127.0.0.1:24225
+        fluentd-async: "true"
+        tag: claimflow.claims-agent
     networks: [integration-net]
     environment:
       # The two extra flags are JDK 25 housekeeping: Netty still reaches for sun.misc.Unsafe and
@@ -320,6 +339,14 @@ services:
     build:
       context: ./integrations/bill-store
     image: claimflow/bill-store:local
+    # Logs flow to fluent-bit -> OpenSearch for the console's Observability tab; Docker's
+    # dual logging keeps `docker compose logs` working beside the driver.
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: 127.0.0.1:24225
+        fluentd-async: "true"
+        tag: claimflow.bill-store
     networks: [integration-net]
     environment:
       # The two extra flags are JDK 25 housekeeping: Netty still reaches for sun.misc.Unsafe and
@@ -348,6 +375,14 @@ services:
     build:
       context: ./integrations/notifications
     image: claimflow/notifications:local
+    # Logs flow to fluent-bit -> OpenSearch for the console's Observability tab; Docker's
+    # dual logging keeps `docker compose logs` working beside the driver.
+    logging:
+      driver: fluentd
+      options:
+        fluentd-address: 127.0.0.1:24225
+        fluentd-async: "true"
+        tag: claimflow.notifications
     networks: [integration-net]
     environment:
       # The two extra flags are JDK 25 housekeeping: Netty still reaches for sun.misc.Unsafe and
@@ -369,3 +404,57 @@ services:
         condition: service_healthy
       edge:
         condition: service_started
+
+  # ── Observability ──────────────────────────────────────────────────────────
+  # Log store behind the ICP console's Observability tab. Single node, security off —
+  # this is demo data on a laptop, and the ICP's client ignores TLS anyway.
+  opensearch:
+    image: opensearchproject/opensearch:2.19.1
+    # Both networks: fluent-bit writes from the integration side, the ICP queries from its own.
+    networks: [integration-net, icp-net]
+    environment:
+      discovery.type: single-node
+      DISABLE_SECURITY_PLUGIN: "true"
+      OPENSEARCH_JAVA_OPTS: -Xms${OPENSEARCH_HEAP:-512m} -Xmx${OPENSEARCH_HEAP:-512m}
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+
+  # Receives the integrations' logs (Docker fluentd driver, tag claimflow.<service>),
+  # parses the Ballerina log line, and indexes application logs, HTTP metrics and workflow
+  # events for the tab.
+  fluent-bit:
+    image: fluent/fluent-bit:3.1
+    networks: [integration-net]
+    ports:
+      # The Docker daemon delivers driver logs from the host side, so the port is published.
+      - "127.0.0.1:24225:24224"
+    volumes:
+      - ./fluent-bit/fluent-bit.conf:/fluent-bit/etc/fluent-bit.conf:ro
+      - ./fluent-bit/parsers.conf:/fluent-bit/etc/parsers.conf:ro
+      - ./fluent-bit/enrich.lua:/fluent-bit/etc/enrich.lua:ro
+      - fluent-bit-buffer:/fluent-bit/buffer
+    depends_on:
+      opensearch:
+        condition: service_healthy
+      opensearch-init:
+        condition: service_completed_successfully
+
+  # One-shot: installs the index template the ICP's adapter queries against (keyword-mapped
+  # icp_runtimeId/level), before the first log document freezes a dynamic mapping instead.
+  opensearch-init:
+    image: curlimages/curl:8.10.1
+    networks: [integration-net]
+    volumes:
+      - ./fluent-bit/opensearch-template.json:/template.json:ro
+      - ./fluent-bit/opensearch-metrics-template.json:/metrics-template.json:ro
+      - ./fluent-bit/opensearch-workflow-metrics-template.json:/workflow-metrics-template.json:ro
+    entrypoint: ["sh", "-c", "curl -sf -X PUT http://opensearch:9200/_index_template/ballerina-application-logs -H 'Content-Type: application/json' -d @/template.json && curl -sf -X PUT http://opensearch:9200/_index_template/ballerina-metrics-logs -H 'Content-Type: application/json' -d @/metrics-template.json && curl -sf -X PUT http://opensearch:9200/_index_template/ballerina-workflow-metrics -H 'Content-Type: application/json' -d @/workflow-metrics-template.json && echo templates installed"]
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    restart: "no"

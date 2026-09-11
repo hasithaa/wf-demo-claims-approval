@@ -55,6 +55,10 @@ credentialsDbPassword = "@ICP_DB_PASSWORD@"
 
 frontendJwtHMACSecret = "workflow-icp-test-secret-key-at-least-32-characters-long"
 
+# The Observability tab's log store. Security is off on the demo's single node, so the
+# default credentials are sent and ignored.
+opensearchUrl = "http://opensearch:9200"
+
 [icp_server.storage]
 dbType = "postgresql"
 dbHost = "@ICP_DB_HOST@"

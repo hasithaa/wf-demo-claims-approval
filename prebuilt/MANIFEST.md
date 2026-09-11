@@ -5,8 +5,8 @@ them prebuilt. `build.sh` consumes them; nothing here needs to be built from sou
 
 | Artifact | Source | Commit |
 |---|---|---|
-| `wso2-integration-control-plane-2.0.0-SNAPSHOT.zip` | `hasithaa/integration-control-plane`, local merge `icp-demo-obs` = upstream main + `workflow-instance-graph` (PR wso2#851) | `b7bb7925d` — 2026-09-10 |
-| `ballerina-workflow-java21-0.9.1.bala` | `hasithaa/fork-module-ballerina-workflow` @ `observability-integration` (PR ballerina-platform#106 on top of the released 0.9.0) | `fad4bec` — 2026-09-07 |
+| `wso2-integration-control-plane-2.0.0-SNAPSHOT.zip` | `hasithaa/integration-control-plane`, local merge `icp-demo-all` = upstream main + `workflow-instance-graph` (PR wso2#851) + `workflow-metrics` (PR wso2#870) | `5c08a9199` (851 @ `b7bb7925d`, 870 @ `dccb68b07`) — 2026-09-11 |
+| `ballerina-workflow-java21-0.9.1.bala` | `hasithaa/fork-module-ballerina-workflow` @ `observability-integration` (PR ballerina-platform#106 on top of the released 0.9.0) | `e1e5d84` — 2026-09-10 |
 | `wso2-icp.runtime.bridge-java21-0.3.0-SNAPSHOT.bala` | `hasithaa/icp-runtime-bridge` @ `main` = upstream main + the heartbeat-guard fix | `0278ab5` — 2026-09-02 |
 
 ## What the ICP build carries
@@ -37,14 +37,19 @@ periodic jobs). On top of it, PR wso2#851 brings the workflow console:
   snippet emits `enableWorkflowManagement = true`, the flag being the deployment's headless
   opt-out.
 
-The module bala carries #106's decision audit trail, content capture and
-`workflow_task_decisions_total`. The bridge bala carries the heartbeat guard that survives a
+The module bala carries #106: client spans, the events counter and duration histograms, the
+task-decision audit trail with identity provenance, and the per-event log samples the console charts. The bridge bala carries the heartbeat guard that survives a
 hung tick and bounds the request.
 
-Observability is **not** wired into this demo: the integrations build with
-`observabilityIncluded = false`, link no `ballerinax/prometheus` or `jaeger`, and the
-compose stack carries no prometheus/jaeger/opensearch/fluent-bit services. The module bala
-still contains the observability capability from #106; the demo simply does not turn it on.
+## Observability
+
+The integrations build with `observabilityIncluded = true`, log JSON, and publish HTTP metrics as
+log lines (`ballerinax/metrics.logs`); the workflow module publishes one record per workflow event
+(`logger = "workflow-metrics"`, PR #106: started/closed runs with duration and outcome, activity
+attempts, data sent, task decisions — plus an audit entry per decision). fluent-bit (Docker's
+fluentd driver) routes them to three OpenSearch indices, and the console's Observability tab reads
+all three: application logs, HTTP metrics, and — with wso2#870 — the workflow metrics section.
+No Prometheus or Jaeger in this stack; nothing here needs them.
 
 ## Rebuilding
 

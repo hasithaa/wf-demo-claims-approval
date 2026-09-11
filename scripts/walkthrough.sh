@@ -72,7 +72,8 @@ wf_mutate() {
 task_for() {
     local wfid="$1" exclude="${2:-}" i task code
     for i in $(seq 1 20); do
-        code=$(wf_read "human-tasks?status=PENDING&refresh=true")
+        # A wide page: the queue may hold many older tasks, and the new one must be on the first page.
+        code=$(wf_read "human-tasks?status=PENDING&refresh=true&limit=200")
         task=$(jqr "
 items = d.get('items') or []
 m = [t for t in items

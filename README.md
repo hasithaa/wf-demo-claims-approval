@@ -134,7 +134,15 @@ appdb   ── one Postgres for the integration side, one database per service
 thunder ── identity provider (OIDC): the single user store, declaratively seeded;
            the ICP validates its ID tokens (JWKS) and syncs groups→roles on every login
 seed    ── one-shot: mints the integrations' org secrets against the running ICP
+fluent-bit ── receives every integration's log stream (Docker fluentd driver) and indexes
+              application logs, HTTP metrics and workflow events into OpenSearch
+opensearch ── the store behind the console's Observability tab (single node, no security)
 ```
+
+The integrations log JSON and publish metrics as log lines, so the console's Observability tab
+shows each integration's logs, its HTTP metrics, and — for the workflow integrations — runs
+started, completed and failed with durations, activity attempts, and task decisions. Every task
+decision also lands as an audit entry (who decided, what, on which task) in the application logs.
 
 The ICP never connects to an integration: commands are delivered inside heartbeat
 *responses* and answered on a second outbound call. `docker compose up` is self-seeding —
@@ -179,6 +187,7 @@ docker-compose.cluster.yml   the second node + the balanced edge
 icp/             ICP runtime image (unpacks the prebuilt zip)
 db/initdb/       Postgres first-boot scripts (apply the zip's own schema)
 edge/            the gateway config (nginx.conf single-node, nginx.cluster.conf balanced)
+fluent-bit/      the log pipeline (parsers, enrichment, the three OpenSearch index templates)
 seed/            first-boot secret minting
 integrations/
   claims/         the claim workflow + the portal API (submit, my claims, tasks, decide)

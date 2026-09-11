@@ -27,3 +27,16 @@ integration = "claims-agent"
 environment = "@ICP_ENVIRONMENT@"
 enableWorkflowManagement = true
 
+# ── Observability ──────────────────────────────────────────────────────────────
+# HTTP metrics publish as log lines (ballerinax/metrics.logs) and the workflow module publishes
+# one record per workflow event; fluent-bit routes both to the indices the ICP console reads.
+[ballerina.observe]
+metricsEnabled = true
+metricsReporter = "prometheus"
+metricsLogsEnabled = true
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+# JSON, so every key the code attaches to a log call — who decided a task, what and when —
+# reaches OpenSearch as its own field rather than as text inside the message.
+[ballerina.log]
+format = "json"
