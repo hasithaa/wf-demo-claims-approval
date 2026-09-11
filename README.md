@@ -150,6 +150,12 @@ shows each integration's logs, its HTTP metrics, and — for the workflow integr
 started, completed and failed with durations, activity attempts, and task decisions. Every task
 decision also lands as an audit entry (who decided, what, on which task) in the application logs.
 
+**Finding a run in Jaeger.** Pick the service **`workflow`** — that is where the execution spans live, and
+it holds only real runs. Picking `/claims` instead buries them: the portal polls `/claims/my` and
+`/claims/tasks` every few seconds, so the most-recent list is all polling traffic. To follow one instance,
+put `workflow.instance.id=<id>` in the Tags box, or paste the trace id into *Lookup by Trace ID*. An
+AI-agent run's trace starts at `post /conversations` under `/agent` and carries every step the agent took.
+
 The same telemetry is also available Prometheus- and Jaeger-native. In Prometheus, try
 `workflow_events_total_value` (the reporter suffixes counters with `_value`; filter by `event`,
 `workflow_type`, `task_kind`, `tool_name`) and `workflow_agent_step_duration_seconds` for the
