@@ -6,7 +6,7 @@ them prebuilt. `build.sh` consumes them; nothing here needs to be built from sou
 | Artifact | Source | Commit |
 |---|---|---|
 | `wso2-integration-control-plane-2.0.0-SNAPSHOT.zip` | `hasithaa/integration-control-plane`, local merge `icp-demo-all` = upstream main + `workflow-instance-graph` (PR wso2#851) + `workflow-metrics` (PR wso2#870) | `icp-demo-all` @ `94386eec1` merging 851 @ `e7a01cab5` and 870 @ `f7cc18ac2` (Workflows section gains the AI Agent Steps table and control-operation counts; `tool_name`/`error_type` mapped in the index template) — 2026-09-11 |
-| `ballerina-workflow-java21-0.9.1.bala` | `hasithaa/fork-module-ballerina-workflow` @ `observability-integration` (PR ballerina-platform#106 on top of the released 0.9.0) | `44383ea` — durable-agent steps (`agent_*` events, `tool_name`, `workflow_agent_step_duration_seconds`), control events (suspended/resumed/terminated/cancelled), task-decision signals and built-in activities kept out of the counts — 2026-09-11 |
+| `ballerina-workflow-java21-0.9.1.bala` | `hasithaa/fork-module-ballerina-workflow` @ `observability-integration` (PR ballerina-platform#106 on top of the released 0.9.0) | `abaf09c` (branch `unified-tracing`, fork PR #2 stacked on #106) — #106's agent steps and control events, plus one trace per run: the caller's trace context travels with the start and the worker records the run, its activities, its data events and each agent step as spans under it — 2026-09-11 |
 | `wso2-icp.runtime.bridge-java21-0.3.0-SNAPSHOT.bala` | `hasithaa/icp-runtime-bridge` @ `main` = upstream main + the heartbeat-guard fix | `0278ab5` — 2026-09-02 |
 
 ## What the ICP build carries
@@ -50,7 +50,9 @@ attempts, data sent, task decisions — plus an audit entry per decision). fluen
 fluentd driver) routes them to three OpenSearch indices, and the console's Observability tab reads
 all three: application logs, HTTP metrics, and — with wso2#870 — the workflow metrics section,
 including the AI agent's steps. Beside the console, a Prometheus scrapes each integration's
-reporter (:9797) and a Jaeger receives every integration's spans over OTLP.
+reporter (:9797) and a Jaeger receives every integration's spans over OTLP. A run filed from the portal is
+one trace from the HTTP request through the run's activities and its human-task children; a run started
+through the ICP tunnel has no traced caller, so its execution forms a trace of its own.
 
 ## Rebuilding
 
