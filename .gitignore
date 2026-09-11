@@ -4,6 +4,9 @@ icp/artifacts/
 integrations/*/artifacts/
 integrations/*/target/
 integrations/*/Dependencies.toml
+# The ICP distribution is a published release: build.sh downloads it here on first run.
+prebuilt/*.zip
+prebuilt/*.zip.sha256
 # Extracted from the bridge bala by bal during build — regenerated every build.sh run
 prebuilt/compiler-plugin/
 prebuilt/platform/

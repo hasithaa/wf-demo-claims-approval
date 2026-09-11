@@ -1,18 +1,20 @@
 # Prebuilt binaries
 
-Neither the ICP nor the Ballerina workflow module is released yet, so this demo carries
-them prebuilt. `build.sh` consumes them; nothing here needs to be built from source.
+The ICP is released, so `build.sh` downloads its distribution here on first run (and verifies the
+checksum); the zip is not committed. The Ballerina workflow module and the ICP runtime bridge are
+not released yet, so those two ride in this directory as balas.
 
-| Artifact | Source | Commit |
+| Artifact | Source | Version |
 |---|---|---|
-| `wso2-integration-control-plane-2.0.0-SNAPSHOT.zip` | `hasithaa/integration-control-plane`, local merge `icp-demo-all` = upstream main + `workflow-instance-graph` (PR wso2#851) + `workflow-metrics` (PR wso2#870) | `icp-demo-all` @ `94386eec1` merging 851 @ `e7a01cab5` and 870 @ `f7cc18ac2` (Workflows section gains the AI Agent Steps table and control-operation counts; `tool_name`/`error_type` mapped in the index template) — 2026-09-11 |
-| `ballerina-workflow-java21-0.9.1.bala` | `hasithaa/fork-module-ballerina-workflow` @ `observability-integration` (PR ballerina-platform#106 on top of the released 0.9.0) | `abaf09c` (branch `unified-tracing`, fork PR #2 stacked on #106) — #106's agent steps and control events, plus one trace per run: the caller's trace context travels with the start and the worker records the run, its activities, its data events and each agent step as spans under it — 2026-09-11 |
+| `wso2-integration-control-plane-2.1.0-alpha3.zip` | [wso2/integration-control-plane release `v2.1.0-alpha3`](https://github.com/wso2/integration-control-plane/releases/tag/v2.1.0-alpha3) — downloaded by `build.sh`, not committed | `2.1.0-alpha3` (commit `2d0ad07b5`) |
+| `ballerina-workflow-java21-0.9.1.bala` | `hasithaa/fork-module-ballerina-workflow` @ `observability-integration` (PR ballerina-platform#106 on top of the released 0.9.0) | `e1e5d84` — 2026-09-10 |
 | `wso2-icp.runtime.bridge-java21-0.3.0-SNAPSHOT.bala` | `hasithaa/icp-runtime-bridge` @ `main` = upstream main + the heartbeat-guard fix | `0278ab5` — 2026-09-02 |
 
-## What the ICP build carries
+## What the release carries
 
-Upstream main already includes wso2#859 (connection hardening, the pool-leak fix, trapped
-periodic jobs). On top of it, PR wso2#851 brings the workflow console:
+`v2.1.0-alpha3` is cut from the merge of wso2#851, and already contains wso2#859 (connection
+hardening, the pool-leak fix, trapped periodic jobs) and wso2#870 (the workflow metrics view).
+The workflow console it brings:
 
 - **Navigation.** Workflows and Human Tasks sit in a *Manage* group ahead of Observability.
 - **Project pages.** An integration whose runtime publishes a worker's task queue counts as a
@@ -36,6 +38,8 @@ periodic jobs). On top of it, PR wso2#851 brings the workflow console:
   (ballerina-library#9129). *Add Runtime* no longer special-cases workflow integrations; its
   snippet emits `enableWorkflowManagement = true`, the flag being the deployment's headless
   opt-out.
+- **Observability.** A Workflow section on the metrics page (wso2#870): runs started, completed and
+  failed with durations, activities ranked by failures, and task decisions by task.
 
 The module bala carries #106: client spans, the events counter and duration histograms, the
 task-decision audit trail with identity provenance, and the per-event log samples the console charts. The bridge bala carries the heartbeat guard that survives a
@@ -56,12 +60,10 @@ through the ICP tunnel has no traced caller, so its execution forms a trace of i
 
 ## Rebuilding
 
-Check out the branch named above and:
+The ICP zip comes from the release; delete it from `prebuilt/` and `build.sh` fetches it again.
+For the two balas, check out the branch named above and:
 
 ```sh
-# ICP zip
-CI=true ./gradlew assembleICP        # -> build/distribution/*.zip
-
 # workflow module bala
 cd ballerina && bal pack             # -> target/bala/*.bala
 

@@ -8,7 +8,8 @@ ICP and workflow module, which ship prebuilt in [`prebuilt/`](prebuilt/MANIFEST.
 
 ## Run it
 
-Docker is the only prerequisite (no Java, no Ballerina on the host).
+Docker is the only prerequisite (no Java, no Ballerina on the host). The first build downloads the
+released ICP distribution, about 100 MB, and caches it in `prebuilt/`.
 
 ```sh
 ./build.sh              # builds the integrations inside a Docker toolchain (~2-4 min first run)

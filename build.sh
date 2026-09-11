@@ -7,8 +7,8 @@
 #   1. Builds a Ballerina builder image (the toolchain lives in Docker, not on your machine).
 #   2. Inside it: publishes the prebuilt workflow-module and bridge balas to the
 #      container-local Ballerina repository, then builds each integration against them.
-#   3. Stages the integration jars and extracts the ICP's database init scripts from the
-#      prebuilt distribution zip.
+#   3. Downloads the released ICP distribution (cached in prebuilt/) and stages the
+#      integration jars plus the ICP's database init scripts out of it.
 #
 # docker compose then builds the runtime images from the staged artifacts.
 set -euo pipefail
@@ -18,7 +18,9 @@ cd "$HERE"
 
 command -v docker >/dev/null 2>&1 || { echo "docker is required (and is the only prerequisite)" >&2; exit 1; }
 
-ICP_DIST="wso2-integration-control-plane-2.0.0-SNAPSHOT"
+ICP_VERSION="2.1.0-alpha3"
+ICP_DIST="wso2-integration-control-plane-${ICP_VERSION}"
+ICP_URL="https://github.com/wso2/integration-control-plane/releases/download/v${ICP_VERSION}/${ICP_DIST}.zip"
 INTEGRATIONS=(claims bill-store notifications claims-agent)
 
 log() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
@@ -59,6 +61,23 @@ docker run --rm -v "$HERE":/work -w /work \
     done
 '
 
+log "Fetching the ICP distribution"
+mkdir -p prebuilt
+if [ -f "prebuilt/${ICP_DIST}.zip" ]; then
+    echo "prebuilt/${ICP_DIST}.zip (cached)"
+else
+    # Downloaded and checksummed in containers, so the host needs no curl and no shasum.
+    docker run --rm -v "$HERE/prebuilt":/out -w /out curlimages/curl:8.10.1 \
+        -fSL --retry 3 -o "${ICP_DIST}.zip.part" "$ICP_URL"
+    docker run --rm -v "$HERE/prebuilt":/out -w /out curlimages/curl:8.10.1 \
+        -fsSL --retry 3 -o "${ICP_DIST}.zip.sha256" "${ICP_URL}.sha256"
+    docker run --rm -v "$HERE/prebuilt":/out -w /out busybox sh -ec "
+        mv ${ICP_DIST}.zip.part ${ICP_DIST}.zip
+        sha256sum -c ${ICP_DIST}.zip.sha256
+    " || { rm -f "prebuilt/${ICP_DIST}.zip"; echo "checksum failed" >&2; exit 1; }
+    echo "prebuilt/${ICP_DIST}.zip"
+fi
+
 log "Staging the ICP database init scripts out of the distribution zip"
 mkdir -p artifacts/db icp/artifacts
 docker run --rm -v "$HERE":/work -w /work busybox sh -ec "
@@ -66,7 +85,8 @@ docker run --rm -v "$HERE":/work -w /work busybox sh -ec "
     cp /tmp/icpzip/${ICP_DIST}/dbscripts/postgresql_init.sql artifacts/db/
     cp /tmp/icpzip/${ICP_DIST}/dbscripts/credentials_postgresql_init.sql artifacts/db/
 "
-# The ICP image builds from ./icp; the zip stays in prebuilt/ (git) and is linked in by copy.
+# The ICP image builds from ./icp, so the zip is copied in; older versions are cleared out.
+rm -f icp/artifacts/*.zip
 cp "prebuilt/${ICP_DIST}.zip" "icp/artifacts/${ICP_DIST}.zip"
 
 log "Done"

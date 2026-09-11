@@ -54,7 +54,7 @@ services:
     build:
       context: ./icp
       args:
-        ICP_DIST: ${ICP_DIST:-wso2-integration-control-plane-2.0.0-SNAPSHOT}
+        ICP_DIST: ${ICP_DIST:-wso2-integration-control-plane-2.1.0-alpha3}
     image: claimflow/icp:local
     networks: [icp-net]
     environment:
