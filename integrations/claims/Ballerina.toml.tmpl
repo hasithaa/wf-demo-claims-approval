@@ -1,0 +1,12 @@
+[package]
+org = "claimflow"
+name = "claims"
+version = "0.1.0"
+distribution = "2201.13.4"
+
+# The workflow module: released by default, or the prebuilt observability build
+# when build.sh runs with --with-observability.
+@WORKFLOW_DEP@
+
+[build-options]
+observabilityIncluded = true

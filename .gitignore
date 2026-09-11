@@ -10,6 +10,8 @@ prebuilt/*.zip.sha256
 # Extracted from the bridge bala by bal during build — regenerated every build.sh run
 prebuilt/compiler-plugin/
 prebuilt/platform/
+# Rendered from Ballerina.toml.tmpl by build.sh (the workflow dependency depends on the mode)
+integrations/*/Ballerina.toml
 # Local Config.toml files can carry live AI tokens — never committed; the entrypoint
 # renders the real one inside the container.
 integrations/*/Config.toml

@@ -16,6 +16,14 @@ released ICP distribution, about 100 MB, and caches it in `prebuilt/`.
 docker compose up -d    # brings up the stack and seeds itself (~2 min to healthy)
 ```
 
+Everything the demo runs is released: the ICP distribution, and the `ballerina/workflow` and
+`wso2/icp.runtime.bridge` packages from Ballerina Central. The workflow module reports its own
+telemetry only from an unreleased build, so the console's Workflow metrics section needs one flag:
+
+```sh
+./build.sh --with-observability     # see prebuilt/MANIFEST.md
+```
+
 Then open the admin console — note the **https**:
 
 | What | Where | Sign in |

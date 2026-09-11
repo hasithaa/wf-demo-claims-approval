@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 # Builds everything this demo runs, using nothing from the host but Docker.
 #
-#   ./build.sh            # then: docker compose up -d
+#   ./build.sh                        # then: docker compose up -d
+#   ./build.sh --with-observability   # same, plus the workflow module that reports telemetry
 #
 # What it does:
 #   1. Builds a Ballerina builder image (the toolchain lives in Docker, not on your machine).
-#   2. Inside it: publishes the prebuilt workflow-module and bridge balas to the
-#      container-local Ballerina repository, then builds each integration against them.
+#   2. Inside it: builds each integration against the released workflow module and ICP
+#      runtime bridge from Ballerina Central. With --with-observability the workflow module
+#      comes instead from prebuilt/, which is the only unreleased piece this demo can use.
 #   3. Downloads the released ICP distribution (cached in prebuilt/) and stages the
 #      integration jars plus the ICP's database init scripts out of it.
 #
@@ -17,6 +19,21 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$HERE"
 
 command -v docker >/dev/null 2>&1 || { echo "docker is required (and is the only prerequisite)" >&2; exit 1; }
+
+WITH_OBS=0
+for arg in "$@"; do
+    case "$arg" in
+        --with-observability) WITH_OBS=1 ;;
+        -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+        *) echo "unknown argument: $arg (try --help)" >&2; exit 2 ;;
+    esac
+done
+
+WORKFLOW_BALA="prebuilt/ballerina-workflow-java21-0.9.1.bala"
+if [ "$WITH_OBS" = 1 ] && [ ! -f "$WORKFLOW_BALA" ]; then
+    echo "--with-observability needs ${WORKFLOW_BALA} (see prebuilt/MANIFEST.md)" >&2
+    exit 1
+fi
 
 ICP_VERSION="2.1.0-alpha3"
 ICP_DIST="wso2-integration-control-plane-${ICP_VERSION}"
@@ -29,32 +46,38 @@ log "Building the Ballerina builder image"
 docker build -q -f docker/builder.Dockerfile -t claimflow/builder:local docker >/dev/null
 echo "claimflow/builder:local"
 
-log "Building the integrations inside the builder"
-# One container run does it all: push the prebuilt balas into the container's local bala
-# repository, then build each integration. The repo is mounted read-write so `bal build`
-# writes target/ and we can stage the jars; nothing else on the host is touched. The
-# Ballerina home lives on a named volume so Central packages are pulled once, not per run,
-# and the compiler JVM is bounded so three consecutive builds fit in Docker's memory.
+if [ "$WITH_OBS" = 1 ]; then
+    log "Building the integrations (workflow module 0.9.1 from prebuilt/, telemetry on)"
+else
+    log "Building the integrations (workflow module and bridge from Ballerina Central)"
+fi
+# One container run renders each Ballerina.toml and builds the integration. The repo is
+# mounted read-write so bal build writes target/ and we can stage the jars. The Ballerina
+# home lives on a named volume so Central packages are pulled once, not per run, and the
+# compiler JVM is bounded so three consecutive builds fit in Docker memory.
 docker run --rm -v "$HERE":/work -w /work \
     -v claimflow-bal-cache:/root/.ballerina \
     -e JAVA_OPTS=-Xmx2g \
+    -e WITH_OBS="$WITH_OBS" \
     claimflow/builder:local bash -ec '
-    # Re-pushing an existing version is refused; clear our two from the local repo first.
-    rm -rf /root/.ballerina/repositories/local/bala/ballerina/workflow \
-           /root/.ballerina/repositories/local/bala/wso2/icp.runtime.bridge
-    # The compiled cache of a locally pushed package is keyed by version alone, so a rebuilt
-    # 0.9.1 bala would otherwise be shadowed by the BIR of the earlier build.
-    rm -rf /root/.ballerina/repositories/local/cache-*/ballerina/workflow \
-           /root/.ballerina/repositories/local/cache-*/wso2/icp.runtime.bridge \
-           /root/.ballerina/repositories/central.ballerina.io/cache-*/ballerina/workflow \
-           /root/.ballerina/repositories/central.ballerina.io/cache-*/wso2/icp.runtime.bridge
-    bal push --repository=local prebuilt/ballerina-workflow-java21-0.9.1.bala
-    bal push --repository=local prebuilt/wso2-icp.runtime.bridge-java21-0.3.0-SNAPSHOT.bala
+    if [ "$WITH_OBS" = 1 ]; then
+        # Re-pushing an existing version is refused, and the compiled cache is keyed by
+        # version alone, so a rebuilt 0.9.1 bala would be shadowed by the earlier BIR.
+        rm -rf /root/.ballerina/repositories/local/bala/ballerina/workflow \
+               /root/.ballerina/repositories/local/cache-*/ballerina/workflow \
+               /root/.ballerina/repositories/central.ballerina.io/cache-*/ballerina/workflow
+        bal push --repository=local prebuilt/ballerina-workflow-java21-0.9.1.bala
+        DEP=$(printf "%s\n" "[[dependency]]" "org = \"ballerina\"" "name = \"workflow\"" "version = \"0.9.1\"" "repository = \"local\"")
+    else
+        DEP=""
+    fi
     for name in '"${INTEGRATIONS[*]}"'; do
+        awk -v dep="$DEP" "{ if (\$0 == \"@WORKFLOW_DEP@\") { if (dep != \"\") print dep } else print }" \
+            "integrations/${name}/Ballerina.toml.tmpl" > "integrations/${name}/Ballerina.toml"
         echo "-- bal build integrations/${name}"
-        # The project keeps its own cache of dependency BIRs under target/; a same-version
-        # rebuild of the module is invisible to it, so start from nothing.
-        rm -rf "integrations/${name}/target"
+        # target/ caches dependency BIRs and Dependencies.toml locks the resolved versions;
+        # both would pin the previous mode, so start from nothing.
+        rm -rf "integrations/${name}/target" "integrations/${name}/Dependencies.toml"
         (cd "integrations/${name}" && bal build)
         mkdir -p "integrations/${name}/artifacts"
         cp "integrations/${name}"/target/bin/*.jar "integrations/${name}/artifacts/${name}.jar"

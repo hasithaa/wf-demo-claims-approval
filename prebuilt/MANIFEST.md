@@ -1,14 +1,32 @@
 # Prebuilt binaries
 
-The ICP is released, so `build.sh` downloads its distribution here on first run (and verifies the
-checksum); the zip is not committed. The Ballerina workflow module and the ICP runtime bridge are
-not released yet, so those two ride in this directory as balas.
+Almost nothing lives here any more. The ICP, the Ballerina workflow module and the ICP runtime
+bridge are all released, so `build.sh` takes them from their releases:
 
-| Artifact | Source | Version |
+| Artifact | Where it comes from | Version |
 |---|---|---|
-| `wso2-integration-control-plane-2.1.0-alpha3.zip` | [wso2/integration-control-plane release `v2.1.0-alpha3`](https://github.com/wso2/integration-control-plane/releases/tag/v2.1.0-alpha3) — downloaded by `build.sh`, not committed | `2.1.0-alpha3` (commit `2d0ad07b5`) |
-| `ballerina-workflow-java21-0.9.1.bala` | `hasithaa/fork-module-ballerina-workflow` @ `observability-integration` (PR ballerina-platform#106 on top of the released 0.9.0) | `e1e5d84` — 2026-09-10 |
-| `wso2-icp.runtime.bridge-java21-0.3.0-SNAPSHOT.bala` | `hasithaa/icp-runtime-bridge` @ `main` = upstream main + the heartbeat-guard fix | `0278ab5` — 2026-09-02 |
+| ICP distribution | [wso2/integration-control-plane release `v2.1.0-alpha3`](https://github.com/wso2/integration-control-plane/releases/tag/v2.1.0-alpha3) — downloaded into this directory on first build, checksum verified, not committed | `2.1.0-alpha3` (commit `2d0ad07b5`) |
+| `ballerina/workflow` | Ballerina Central | `0.9.0` |
+| `wso2/icp.runtime.bridge` | Ballerina Central | `1.0.0` |
+
+## The one exception: workflow telemetry
+
+The workflow module only reports its own telemetry — spans, the events counter, one log record per
+workflow event, and the task-decision audit trail — from PR
+[ballerina-platform/module-ballerina-workflow#106](https://github.com/ballerina-platform/module-ballerina-workflow/pull/106),
+which is not released. To see the console's Workflow metrics section, build with that module:
+
+```sh
+./build.sh --with-observability     # uses prebuilt/ballerina-workflow-java21-0.9.1.bala
+```
+
+`ballerina-workflow-java21-0.9.1.bala` is built from `hasithaa/fork-module-ballerina-workflow` @
+`observability-integration` (`e1e5d84`, 2026-09-10). Without the flag the demo runs the released
+`0.9.0`: everything works, and the Observability tab still shows logs and HTTP metrics — only the
+Workflow metrics section is empty.
+
+Note the released bridge does not carry the heartbeat-guard fix that the earlier prebuilt bala had.
+Its root cause was JDK 21 carrier pinning, and the integrations run on JDK 25, where it cannot happen.
 
 ## What the release carries
 
@@ -60,13 +78,9 @@ through the ICP tunnel has no traced caller, so its execution forms a trace of i
 
 ## Rebuilding
 
-The ICP zip comes from the release; delete it from `prebuilt/` and `build.sh` fetches it again.
-For the two balas, check out the branch named above and:
+The ICP zip comes from the release; delete it from `prebuilt/` and the next build fetches it again.
+To refresh the observability bala after new commits on PR #106:
 
 ```sh
-# workflow module bala
 cd ballerina && bal pack             # -> target/bala/*.bala
-
-# bridge bala
-./gradlew build -x test              # -> ballerina/build/bal_build_target/bala/*.bala
 ```
