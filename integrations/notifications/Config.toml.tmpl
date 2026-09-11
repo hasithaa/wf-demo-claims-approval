@@ -20,12 +20,19 @@ enableWorkflowManagement = false
 # A plain service: registers and reports artifacts, accepts no workflow commands.
 
 # ── Observability ──────────────────────────────────────────────────────────────
-# HTTP metrics publish as log lines (ballerinax/metrics.logs) and the workflow module publishes
-# one record per workflow event; fluent-bit routes both to the indices the ICP console reads.
+# Metrics go two ways: the Prometheus reporter serves /metrics on :9797 for the demo's Prometheus,
+# and ballerinax/metrics.logs publishes each sample as a log line for the console's metrics index.
+# Traces go to the demo's Jaeger over OTLP; the workflow module adds a span per client call.
 [ballerina.observe]
 metricsEnabled = true
 metricsReporter = "prometheus"
 metricsLogsEnabled = true
+tracingEnabled = true
+tracingProvider = "jaeger"
+
+[ballerinax.jaeger]
+agentHostname = "jaeger"
+agentPort = 4317
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 # JSON, so every key the code attaches to a log call — who decided a task, what and when —

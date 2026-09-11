@@ -1,0 +1,17 @@
+# Scrapes the four integrations' Ballerina Prometheus reporters (port 9797 in each container).
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: claimflow-integrations
+    metrics_path: /metrics
+    static_configs:
+      - targets: ['claims:9797']
+        labels: {integration: claims}
+      - targets: ['claims-agent:9797']
+        labels: {integration: claims-agent}
+      - targets: ['bill-store:9797']
+        labels: {integration: bill-store}
+      - targets: ['notifications:9797']
+        labels: {integration: notifications}

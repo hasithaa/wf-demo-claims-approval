@@ -27,6 +27,7 @@ volumes:
   opensearch-data:
   # fluent-bit's on-disk chunk buffer, so an OpenSearch outage loses no log lines.
   fluent-bit-buffer:
+  prometheus-data:
 
 services:
   # ── Control plane ────────────────────────────────────────────────────────────
@@ -406,6 +407,29 @@ services:
         condition: service_started
 
   # ── Observability ──────────────────────────────────────────────────────────
+  # Traces. Every integration exports spans over OTLP (4317); the workflow module adds one
+  # span per client call (start, send data, decide a task), tagged with the instance id.
+  jaeger:
+    image: jaegertracing/all-in-one:1.60
+    networks: [integration-net]
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      # The Jaeger UI, for a browser on the host.
+      - "${JAEGER_UI_PORT:-16686}:16686"
+
+  # Metrics, scraped from each integration's Prometheus reporter (:9797). The console's own
+  # metrics come from the log pipeline below; this is the Prometheus-native view of the same.
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    networks: [integration-net]
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    ports:
+      # The Prometheus UI (the portal holds 9090 on the host).
+      - "${PROMETHEUS_PORT:-9091}:9090"
+
   # Log store behind the ICP console's Observability tab. Single node, security off —
   # this is demo data on a laptop, and the ICP's client ignores TLS anyway.
   opensearch:

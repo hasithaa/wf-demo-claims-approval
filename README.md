@@ -24,6 +24,8 @@ Then open the admin console — note the **https**:
 | Claims API / bill store / inbox | http://localhost:9080 · 9081 · 9082 | — |
 | Thunder console (identity admin) | https://localhost:8090/console | `admin` / `admin12345` |
 | Thunder (identity, later phases) | https://localhost:8090/console | `admin` / `admin12345` |
+| Jaeger (traces) | http://localhost:16686 | — |
+| Prometheus (metrics) | http://localhost:9091 | — |
 | Temporal UI (optional) | `docker compose --profile ui up -d temporal-ui` → http://localhost:8233 | — |
 
 The browser will warn about the self-signed certificate; proceed. Opening plain
@@ -137,12 +139,24 @@ seed    ── one-shot: mints the integrations' org secrets against the running
 fluent-bit ── receives every integration's log stream (Docker fluentd driver) and indexes
               application logs, HTTP metrics and workflow events into OpenSearch
 opensearch ── the store behind the console's Observability tab (single node, no security)
+jaeger     ── traces: every integration exports spans over OTLP; the workflow module adds a
+              span per client call, tagged with the workflow instance id and who decided
+prometheus ── scrapes each integration's /metrics (:9797): HTTP metrics plus the workflow
+              module's workflow_events_total and duration summaries
 ```
 
 The integrations log JSON and publish metrics as log lines, so the console's Observability tab
 shows each integration's logs, its HTTP metrics, and — for the workflow integrations — runs
 started, completed and failed with durations, activity attempts, and task decisions. Every task
 decision also lands as an audit entry (who decided, what, on which task) in the application logs.
+
+The same telemetry is also available Prometheus- and Jaeger-native. In Prometheus, try
+`workflow_events_total_value` (the reporter suffixes counters with `_value`; filter by `event`,
+`workflow_type`, `task_kind`, `tool_name`) and `workflow_agent_step_duration_seconds` for the
+AI agent's steps; in Jaeger, pick the `/claims`
+or `/agent` service (Ballerina names a traced service by its base path) and search by the tag
+`workflow.instance.id` to see every client call that touched one run, or `user.id` for every
+decision one person made.
 
 The ICP never connects to an integration: commands are delivered inside heartbeat
 *responses* and answered on a second outbound call. `docker compose up` is self-seeding —
