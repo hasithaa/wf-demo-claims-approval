@@ -5,7 +5,7 @@ them prebuilt. `build.sh` consumes them; nothing here needs to be built from sou
 
 | Artifact | Source | Commit |
 |---|---|---|
-| `wso2-integration-control-plane-2.0.0-SNAPSHOT.zip` | `hasithaa/integration-control-plane`, local merge `icp-demo-all` = upstream main + `workflow-instance-graph` (PR wso2#851) + `workflow-metrics` (PR wso2#870) | `icp-demo-all` head merging 851 @ `e7a01cab5` and 870 @ `46989c5cf` (Workflows section refreshes with the page, readable time axis, latest-interval 95th percentile rendered at human scale, page-consistent labels) — 2026-09-11 |
+| `wso2-integration-control-plane-2.0.0-SNAPSHOT.zip` | `hasithaa/integration-control-plane`, local merge `icp-demo-all` = upstream main + `workflow-instance-graph` (PR wso2#851) + `workflow-metrics` (PR wso2#870) | `icp-demo-all` @ `f5ecbd92b` merging 851 @ `e7a01cab5` and 870 @ `2d614ddff` (Workflows section gains the AI Agent Steps table and control-operation counts; `tool_name`/`error_type` mapped in the index template) — 2026-09-11 |
 | `ballerina-workflow-java21-0.9.1.bala` | `hasithaa/fork-module-ballerina-workflow` @ `observability-integration` (PR ballerina-platform#106 on top of the released 0.9.0) | `44383ea` — durable-agent steps (`agent_*` events, `tool_name`, `workflow_agent_step_duration_seconds`), control events (suspended/resumed/terminated/cancelled), task-decision signals and built-in activities kept out of the counts — 2026-09-11 |
 | `wso2-icp.runtime.bridge-java21-0.3.0-SNAPSHOT.bala` | `hasithaa/icp-runtime-bridge` @ `main` = upstream main + the heartbeat-guard fix | `0278ab5` — 2026-09-02 |
 
@@ -48,8 +48,9 @@ log lines (`ballerinax/metrics.logs`); the workflow module publishes one record 
 (`logger = "workflow-metrics"`, PR #106: started/closed runs with duration and outcome, activity
 attempts, data sent, task decisions — plus an audit entry per decision). fluent-bit (Docker's
 fluentd driver) routes them to three OpenSearch indices, and the console's Observability tab reads
-all three: application logs, HTTP metrics, and — with wso2#870 — the workflow metrics section.
-No Prometheus or Jaeger in this stack; nothing here needs them.
+all three: application logs, HTTP metrics, and — with wso2#870 — the workflow metrics section,
+including the AI agent's steps. Beside the console, a Prometheus scrapes each integration's
+reporter (:9797) and a Jaeger receives every integration's spans over OTLP.
 
 ## Rebuilding
 

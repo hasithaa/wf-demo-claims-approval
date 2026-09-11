@@ -229,6 +229,26 @@
         },
         "attempt": {
           "type": "integer"
+        },
+        "tool_name": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
+        },
+        "error_type": {
+          "type": "keyword",
+          "ignore_above": 1024,
+          "fields": {
+            "keyword": {
+              "type": "keyword",
+              "ignore_above": 1024
+            }
+          }
         }
       }
     }
