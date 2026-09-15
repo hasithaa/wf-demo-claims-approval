@@ -31,11 +31,13 @@ metricsEnabled = true
 metricsReporter = "prometheus"
 metricsLogsEnabled = true
 tracingEnabled = true
-tracingProvider = "jaeger"
+tracingProvider = "otel"
 
-[ballerinax.jaeger]
-agentHostname = "jaeger"
-agentPort = 4317
+[ballerina.otel]
+tracesEndpoint = "http://jaeger:4317"
+
+[ballerina.otel.tracesResourceAttributes]
+"service.name" = "bill-store"
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 # JSON, so every key the code attaches to a log call — who decided a task, what and when —

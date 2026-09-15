@@ -18,9 +18,12 @@ docker compose up -d    # brings up the stack and seeds itself (~2 min to health
 
 Everything the demo runs is released: the ICP distribution, and the `ballerina/workflow` and
 `wso2/icp.runtime.bridge` packages from Ballerina Central. The workflow module reports its own
-telemetry only from an unreleased build, so the console's Workflow metrics section needs one flag:
+telemetry only from an unreleased build, so the console's Workflow metrics section needs one flag —
+and, because that build also needs an unreleased Ballerina distribution, a GitHub token that can
+read `ballerina-platform` packages:
 
 ```sh
+export packageUser=<github-username> packagePAT=<token with read:packages>
 ./build.sh --with-observability     # see prebuilt/MANIFEST.md
 ```
 
@@ -159,18 +162,19 @@ shows each integration's logs, its HTTP metrics, and — for the workflow integr
 started, completed and failed with durations, activity attempts, and task decisions. Every task
 decision also lands as an audit entry (who decided, what, on which task) in the application logs.
 
-**Finding a run in Jaeger.** Pick the service **`workflow`** — that is where the execution spans live, and
-it holds only real runs. Picking `/claims` instead buries them: the portal polls `/claims/my` and
-`/claims/tasks` every few seconds, so the most-recent list is all polling traffic. To follow one instance,
-put `workflow.instance.id=<id>` in the Tags box, or paste the trace id into *Lookup by Trace ID*. An
-AI-agent run's trace starts at `post /conversations` under `/agent` and carries every step the agent took.
+**Finding a run in Jaeger.** Pick the service **`claims`** and put `workflow.instance.id=<id>` in the
+Tags box: one trace comes back, and it is the whole run — the call that started it, every data event
+sent to it, every decision a person made on it, and the execution in between (activities, human-task
+waits, and for the AI agent every model call and tool call). A claim that took a manager, a bill and
+an accountant is still one trace, however many requests and days it spanned, because the trace's id is
+derived from the instance id rather than propagated. Each client span links back to the request that
+made the call, so a portal request is one click away. The service is the integration that owns the
+workflow (`claims`, or `claims-agent` for the AI flow); its most-recent traces are mostly the portal
+polling `/claims/my` and `/claims/tasks`, so search by the instance tag rather than browsing the list.
 
-The same telemetry is also available Prometheus- and Jaeger-native. In Prometheus, try
-`workflow_events_total_value` (the reporter suffixes counters with `_value`; filter by `event`,
-`workflow_type`, `task_kind`, `tool_name`) and `workflow_agent_step_duration_seconds` for the
-AI agent's steps; in Jaeger, pick the `/claims`
-or `/agent` service (Ballerina names a traced service by its base path) and search by the tag
-`workflow.instance.id` to see every client call that touched one run, or `user.id` for every
+The same telemetry is also available Prometheus-native: try `workflow_events_total_value` (the reporter
+suffixes counters with `_value`; filter by `event`, `workflow_type`, `task_kind`, `tool_name`) and
+`workflow_agent_step_duration_seconds` for the AI agent's steps. In Jaeger, `user.id` finds every
 decision one person made.
 
 The ICP never connects to an integration: commands are delivered inside heartbeat

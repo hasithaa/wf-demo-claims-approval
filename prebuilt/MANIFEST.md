@@ -17,13 +17,21 @@ workflow event, and the task-decision audit trail — from PR
 which is not released. To see the console's Workflow metrics section, build with that module:
 
 ```sh
+export packageUser=<github-username> packagePAT=<token with read:packages>
 ./build.sh --with-observability     # uses prebuilt/ballerina-workflow-java21-0.9.1.bala
 ```
 
 `ballerina-workflow-java21-0.9.1.bala` is built from `hasithaa/fork-module-ballerina-workflow` @
-`observability-integration` (`e1e5d84`, 2026-09-10). Without the flag the demo runs the released
-`0.9.0`: everything works, and the Observability tab still shows logs and HTTP metrics — only the
-Workflow metrics section is empty.
+`unified-tracing`. Without the flag the demo runs the released `0.9.0`: everything works, and the
+Observability tab still shows logs and HTTP metrics — only the Workflow metrics section is empty.
+
+That build targets Ballerina `2201.14.0-20260914-141400-b8d79cea`, whose runtime carries the
+OpenTelemetry version it uses, so the integrations compile against the same distribution. It is not
+released: there is no image on Docker Hub and no public download, only the zip in the
+ballerina-platform GitHub Packages registry — hence the credentials. `build.sh` passes them to
+`docker/builder-prerelease.Dockerfile` as a build secret, so they reach neither the image nor its
+history, and it stops with an explanation if they are unset. The default build is unchanged and
+still needs nothing but Docker.
 
 Note the released bridge does not carry the heartbeat-guard fix that the earlier prebuilt bala had.
 Its root cause was JDK 21 carrier pinning, and the integrations run on JDK 25, where it cannot happen.
@@ -79,8 +87,9 @@ through the ICP tunnel has no traced caller, so its execution forms a trace of i
 ## Rebuilding
 
 The ICP zip comes from the release; delete it from `prebuilt/` and the next build fetches it again.
-To refresh the observability bala after new commits on PR #106:
+To refresh the observability bala after new commits on the module branch:
 
 ```sh
-cd ballerina && bal pack             # -> target/bala/*.bala
+./gradlew :workflow-native:build     # the bala keeps a stale native jar otherwise
+cd ballerina && bal pack --offline   # -> target/bala/*.bala
 ```

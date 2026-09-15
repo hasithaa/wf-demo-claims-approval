@@ -30,9 +30,39 @@ for arg in "$@"; do
 done
 
 WORKFLOW_BALA="prebuilt/ballerina-workflow-java21-0.9.1.bala"
-if [ "$WITH_OBS" = 1 ] && [ ! -f "$WORKFLOW_BALA" ]; then
-    echo "--with-observability needs ${WORKFLOW_BALA} (see prebuilt/MANIFEST.md)" >&2
-    exit 1
+# The released distribution every mode but the observability one builds against.
+BAL_RELEASE="2201.13.4"
+# The unreleased distribution the telemetry build of the workflow module needs. Its runtime
+# carries the OpenTelemetry version that build uses, so the module and whatever compiles
+# against it share one distribution.
+BAL_PRERELEASE="2201.14.0-20260914-141400-b8d79cea"
+BAL_DIST_URL="https://maven.pkg.github.com/ballerina-platform/ballerina-lang/org/ballerinalang/jballerina-tools/${BAL_PRERELEASE}/jballerina-tools-${BAL_PRERELEASE}.zip"
+# The distribution-internal observe package, which observabilityIncluded compiles against. Its
+# version is the one the workflow module builds that distribution with.
+BAL_OBSERVE_VERSION="1.7.1"
+BAL_OBSERVE_URL="https://maven.pkg.github.com/ballerina-platform/ballerina-lang/io/ballerina/observe-ballerina/${BAL_OBSERVE_VERSION}/observe-ballerina-${BAL_OBSERVE_VERSION}.zip"
+
+BUILDER_IMAGE="claimflow/builder:local"
+DISTRIBUTION="$BAL_RELEASE"
+if [ "$WITH_OBS" = 1 ]; then
+    BUILDER_IMAGE="claimflow/builder-prerelease:local"
+    DISTRIBUTION="$BAL_PRERELEASE"
+    if [ ! -f "$WORKFLOW_BALA" ]; then
+        echo "--with-observability needs ${WORKFLOW_BALA} (see prebuilt/MANIFEST.md)" >&2
+        exit 1
+    fi
+    if [ -z "${packageUser:-}" ] || [ -z "${packagePAT:-}" ]; then
+        cat >&2 <<MSG
+--with-observability builds against Ballerina ${BAL_PRERELEASE}, which is not released:
+its only download is the ballerina-platform GitHub Packages registry. Export a GitHub
+username and a token with read:packages, then run this again:
+
+    export packageUser=<github-username> packagePAT=<token>
+
+Without the flag the demo builds with Docker alone, against the released module.
+MSG
+        exit 1
+    fi
 fi
 
 ICP_VERSION="2.1.0-alpha3"
@@ -43,11 +73,24 @@ INTEGRATIONS=(claims bill-store notifications claims-agent)
 log() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 
 log "Building the Ballerina builder image"
-docker build -q -f docker/builder.Dockerfile -t claimflow/builder:local docker >/dev/null
-echo "claimflow/builder:local"
+if [ "$WITH_OBS" = 1 ]; then
+    # The credentials reach the build as a secret file, so they are in neither the image nor
+    # its history; the shell never puts them on a command line either.
+    CREDS_FILE="$(mktemp)"
+    trap 'rm -f "$CREDS_FILE"' EXIT
+    printf 'packageUser=%s\npackagePAT=%s\n' "$packageUser" "$packagePAT" > "$CREDS_FILE"
+    DOCKER_BUILDKIT=1 docker build -q -f docker/builder-prerelease.Dockerfile \
+        --secret "id=ghcreds,src=$CREDS_FILE" \
+        --build-arg "BAL_VERSION=$BAL_PRERELEASE" --build-arg "BAL_DIST_URL=$BAL_DIST_URL" \
+        --build-arg "BAL_OBSERVE_URL=$BAL_OBSERVE_URL" \
+        -t "$BUILDER_IMAGE" docker >/dev/null
+else
+    docker build -q -f docker/builder.Dockerfile -t "$BUILDER_IMAGE" docker >/dev/null
+fi
+echo "$BUILDER_IMAGE"
 
 if [ "$WITH_OBS" = 1 ]; then
-    log "Building the integrations (workflow module 0.9.1 from prebuilt/, telemetry on)"
+    log "Building the integrations (workflow module 0.9.1 from prebuilt/ on Ballerina ${BAL_PRERELEASE}, telemetry on)"
 else
     log "Building the integrations (workflow module and bridge from Ballerina Central)"
 fi
@@ -59,7 +102,8 @@ docker run --rm -v "$HERE":/work -w /work \
     -v claimflow-bal-cache:/root/.ballerina \
     -e JAVA_OPTS=-Xmx2g \
     -e WITH_OBS="$WITH_OBS" \
-    claimflow/builder:local bash -ec '
+    -e DISTRIBUTION="$DISTRIBUTION" \
+    "$BUILDER_IMAGE" bash -ec '
     if [ "$WITH_OBS" = 1 ]; then
         # Re-pushing an existing version is refused, and the compiled cache is keyed by
         # version alone, so a rebuilt 0.9.1 bala would be shadowed by the earlier BIR.
@@ -72,7 +116,7 @@ docker run --rm -v "$HERE":/work -w /work \
         DEP=""
     fi
     for name in '"${INTEGRATIONS[*]}"'; do
-        awk -v dep="$DEP" "{ if (\$0 == \"@WORKFLOW_DEP@\") { if (dep != \"\") print dep } else print }" \
+        awk -v dep="$DEP" -v dist="$DISTRIBUTION" "{ if (\$0 == \"@WORKFLOW_DEP@\") { if (dep != \"\") print dep } else { gsub(/@DISTRIBUTION@/, dist); print } }" \
             "integrations/${name}/Ballerina.toml.tmpl" > "integrations/${name}/Ballerina.toml"
         echo "-- bal build integrations/${name}"
         # target/ caches dependency BIRs and Dependencies.toml locks the resolved versions;
