@@ -7,13 +7,13 @@
 -- Super Admins group lets the admin play every part while the portals are being built.
 INSERT INTO roles_v2 (role_id, role_name, org_id, description)
 SELECT gen_random_uuid()::text, r.name, 1, 'Claimflow demo task role'
-  FROM (VALUES ('MANAGER'), ('ACCOUNTANT')) AS r(name)
+  FROM (VALUES ('MANAGER'), ('ACCOUNTANT'), ('CLAIMS_ADMIN')) AS r(name)
  WHERE NOT EXISTS (SELECT 1 FROM roles_v2 WHERE role_name = r.name);
 
 INSERT INTO group_role_mapping (group_id, role_id, org_uuid)
 SELECT g.group_id, r.role_id, 1
   FROM user_groups g
-  JOIN roles_v2 r ON r.role_name IN ('MANAGER', 'ACCOUNTANT')
+  JOIN roles_v2 r ON r.role_name IN ('MANAGER', 'ACCOUNTANT', 'CLAIMS_ADMIN')
  WHERE g.group_name = 'Super Admins'
    AND NOT EXISTS (
         SELECT 1 FROM group_role_mapping m

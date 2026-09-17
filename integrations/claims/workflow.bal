@@ -57,6 +57,10 @@ type ClaimResult record {|
 # A claim from submission to payment. Parks on the manager's review; when the manager
 # requests a bill, parks again on the `billUploaded` event and reviews once more with
 # the bill in the task input.
+// The role that administers every Claimflow task: sees it beside the audience, may reassign it,
+// move or clear its deadline, or decide it — recorded as an administrator's decision.
+const CLAIMS_ADMIN = "CLAIMS_ADMIN";
+
 @workflow:Workflow
 function claimApproval(workflow:Context ctx, Claim claim,
         record {|future<json> billUploaded;|} events) returns ClaimResult|error {
@@ -67,7 +71,8 @@ function claimApproval(workflow:Context ctx, Claim claim,
     // either retries as-is or corrects the arguments — the correction is on the record.
     Validation v = check ctx->callActivity(validateClaim,
         {"id": claim.id, "amount": claim.amount},
-        retryPolicy = {userRoles: "MANAGER", title: "Review the failed claim validation"});
+        retryPolicy = {userRoles: "MANAGER", administratorRoles: CLAIMS_ADMIN,
+            title: "Review the failed claim validation"});
 
     ReviewDecision decision = check ctx->awaitHumanTask("reviewClaim",
         {
@@ -78,7 +83,7 @@ function claimApproval(workflow:Context ctx, Claim claim,
             "billUrl": claim?.billUrl,
             "validation": v.note
         },
-        userRoles = "MANAGER", title = "Review claim " + claim.id);
+        userRoles = "MANAGER", administratorRoles = CLAIMS_ADMIN, title = "Review claim " + claim.id);
 
     if decision.outcome == "REQUEST_BILL" {
         string billRequestedState = check ctx->callActivity(recordClaimState,
@@ -99,7 +104,8 @@ function claimApproval(workflow:Context ctx, Claim claim,
                 "submittedBy": claim.submittedBy,
                 "bill": bill
             },
-            userRoles = "MANAGER", title = "Review claim " + claim.id + " (bill attached)");
+            userRoles = "MANAGER", administratorRoles = CLAIMS_ADMIN,
+            title = "Review claim " + claim.id + " (bill attached)");
     }
 
     if decision.outcome != "APPROVE" {
@@ -114,7 +120,8 @@ function claimApproval(workflow:Context ctx, Claim claim,
     // The money moves only after an accountant releases it.
     PayApproval pay = check ctx->awaitHumanTask("approvePayment",
         {"claimId": claim.id, "amount": claim.amount, "payee": claim.submittedBy},
-        userRoles = "ACCOUNTANT", title = "Approve payment for claim " + claim.id);
+        userRoles = "ACCOUNTANT", administratorRoles = CLAIMS_ADMIN,
+        title = "Approve payment for claim " + claim.id);
     if !pay.approved {
         string refusedState = check ctx->callActivity(recordClaimState,
             {"claim": claim, "workflowId": wfId, "status": "PAYMENT_REFUSED", "note": pay?.comment});

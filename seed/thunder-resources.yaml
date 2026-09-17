@@ -6,8 +6,9 @@
 # environment at load time.
 #
 # The groups matter more than the users: the ICP maps the token's `groups` claim (group
-# NAMES) to its roles — managers → MANAGER, accountants → ACCOUNTANT — and human tasks
-# are gated on those role names.
+# NAMES) to its roles — managers → MANAGER, accountants → ACCOUNTANT, claims-admins →
+# CLAIMS_ADMIN — and human tasks are gated on those role names. Administrators stand
+# beside a task's audience: they see it, may reassign it, move its deadline, or decide it.
 
 resource_type: user
 id: user-jane
@@ -57,6 +58,18 @@ attributes:
 credentials:
   password: "bob12345"
 ---
+resource_type: user
+id: user-sam
+type: Person
+ouId: 01900000-0000-7000-8000-000000000001
+attributes:
+  username: sam
+  email: sam@claimflow.dev
+  given_name: Sam
+  family_name: Administrator
+credentials:
+  password: "sam12345"
+---
 resource_type: group
 id: group-managers
 name: managers
@@ -73,6 +86,15 @@ description: May release Claimflow payments
 ouId: 01900000-0000-7000-8000-000000000001
 members:
   - id: user-john
+    type: user
+---
+resource_type: group
+id: group-claims-admins
+name: claims-admins
+description: Administers every Claimflow task — reassign, re-deadline, or decide on the audience's behalf
+ouId: 01900000-0000-7000-8000-000000000001
+members:
+  - id: user-sam
     type: user
 ---
 resource_type: group

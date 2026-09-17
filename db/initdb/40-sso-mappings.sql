@@ -14,7 +14,8 @@ INSERT INTO user_groups (group_id, group_name, org_uuid, description)
 SELECT v.gid, v.gname, 1, v.gdesc
   FROM (VALUES
         ('a1000000-0000-4000-8000-000000000001', 'Claim Managers',    'Thunder group: managers'),
-        ('a1000000-0000-4000-8000-000000000002', 'Claim Accountants', 'Thunder group: accountants')
+        ('a1000000-0000-4000-8000-000000000002', 'Claim Accountants', 'Thunder group: accountants'),
+        ('a1000000-0000-4000-8000-000000000003', 'Claim Administrators', 'Thunder group: claims-admins')
        ) AS v(gid, gname, gdesc)
  WHERE NOT EXISTS (SELECT 1 FROM user_groups g WHERE g.group_name = v.gname);
 
@@ -24,6 +25,7 @@ SELECT g.group_id, r.role_id, 1
   JOIN roles_v2 r
     ON (g.group_name = 'Claim Managers'    AND r.role_name = 'MANAGER')
     OR (g.group_name = 'Claim Accountants' AND r.role_name = 'ACCOUNTANT')
+    OR (g.group_name = 'Claim Administrators' AND r.role_name = 'CLAIMS_ADMIN')
  WHERE NOT EXISTS (SELECT 1 FROM group_role_mapping m
                     WHERE m.group_id = g.group_id AND m.role_id = r.role_id);
 
@@ -34,14 +36,18 @@ INSERT INTO sso_group_mappings (mapping_id, org_uuid, issuer, claim_name, claim_
 SELECT v.mid, 1, 'https://localhost:8090', 'groups', v.cval, g.group_id
   FROM (VALUES
         ('a2000000-0000-4000-8000-000000000001', 'managers',    'Claim Managers'),
-        ('a2000000-0000-4000-8000-000000000002', 'accountants', 'Claim Accountants')
+        ('a2000000-0000-4000-8000-000000000002', 'accountants', 'Claim Accountants'),
+        ('a2000000-0000-4000-8000-000000000003', 'claims-admins', 'Claim Administrators')
        ) AS v(mid, cval, gname)
   JOIN user_groups g ON g.group_name = v.gname
  WHERE NOT EXISTS (SELECT 1 FROM sso_group_mappings m WHERE m.mapping_id = v.mid);
 
 -- Mapped roles need real permissions: the console gates its navigation (and, in
 -- federated mode, the login itself) on permissions, not role names. Managers see and
--- decide human tasks and watch executions; accountants see and decide human tasks.
+-- decide human tasks and watch executions; accountants see and decide human tasks;
+-- administrators hold the same console permissions — the task-level power to reassign,
+-- re-deadline or decide on the audience's behalf comes from the CLAIMS_ADMIN role name
+-- the workflows declare as `administratorRoles`, not from a console permission.
 INSERT INTO role_permission_mapping (role_id, permission_id)
 SELECT r.role_id, p.permission_id
   FROM roles_v2 r
@@ -53,7 +59,10 @@ SELECT r.role_id, p.permission_id
             WHEN 'ACCOUNTANT' THEN ARRAY['workflow_mgt:view_human_tasks', 'workflow_mgt:manage_human_tasks',
                                          'workflow_mgt:view_workflows',
                                          'project_mgt:view', 'integration_mgt:view']
+            WHEN 'CLAIMS_ADMIN' THEN ARRAY['workflow_mgt:view_human_tasks', 'workflow_mgt:manage_human_tasks',
+                                           'workflow_mgt:view_workflows',
+                                           'project_mgt:view', 'integration_mgt:view']
         END)
- WHERE r.role_name IN ('MANAGER', 'ACCOUNTANT')
+ WHERE r.role_name IN ('MANAGER', 'ACCOUNTANT', 'CLAIMS_ADMIN')
    AND NOT EXISTS (SELECT 1 FROM role_permission_mapping m
                     WHERE m.role_id = r.role_id AND m.permission_id = p.permission_id);

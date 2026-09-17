@@ -13,6 +13,7 @@ below is exactly what to click and what to say.
 | bob | bob12345 | Portal | Files his claim by chatting with the 🤖 assistant |
 | jane | jane12345 | Portal (Approvals workspace) or ICP | Manager — reviews every claim |
 | john | john12345 | Portal (Approvals) or ICP | Accountant — releases every payment |
+| sam | sam12345 | ICP | Task administrator — reassigns, re-deadlines, or decides any task on the audience's behalf |
 | admin | admin | ICP https://localhost:9664 (local login) | Operations narrator |
 
 One identity for everything: all four sign into both portals through Thunder (SSO on
@@ -106,6 +107,23 @@ chat, marks the claim `REJECTED`, and the same closing etiquette ends the conver
 Try it small, too: a fresh AI claim for `$800` skips the case and the sign-off — the
 agent validates, approves, notifies, and parks only on john's release.
 
+## Act 3 — the administrator (durable tasks, governed)
+
+Every Claimflow task names `CLAIMS_ADMIN` as its administrator beside its audience. sam is
+neither a manager nor an accountant, yet the ICP shows him every pending task.
+
+1. alice submits a claim; jane is away. Sign into the ICP as **sam** → **Human Tasks** →
+   the review is listed, its detail says *Administrators: CLAIMS_ADMIN*, and the
+   **Administer** card is offered.
+2. **Change Deadline** → extend by 30 minutes: the task's own history records the act
+   under sam's name. Clearing it leaves the task open until someone decides.
+3. **Reassign** → users `john`: jane's role is refused from now on and john sees the review.
+   Reassign back to roles `MANAGER` to hand it home.
+4. Or decide it himself: **Complete Task** as sam — the decision is recorded with
+   *Completed As: administrator*, and the claim moves on exactly as if jane had signed.
+5. Sign in as **bob** (portal) → the task is not visible: he is neither audience nor
+   administrator, and the API refuses him even though he can see his own claim.
+
 ## The operations view (run alongside either act)
 
 Sign into the ICP as jane (SSO) or admin:
@@ -128,7 +146,7 @@ Sign into the ICP as jane (SSO) or admin:
 | AI chat answers with canned prose | No/expired `WSO2_AI_TOKEN` — the scripted stand-in took over; refresh the token and `docker compose up -d claims-agent`. (The stand-in paces itself like a real model — a few seconds per step; set `mockThinkSeconds = 0` in the agent's config to make it instant.) |
 | Agent bubble pending forever | The gate is waiting — that's john's cue, not a bug |
 | ICP login says "Error getting user details", or the console stops answering | The connection-pool wedge — run `scripts/recover.sh`; it terminates stuck sessions, restarts the ICP when its own pool is exhausted, and re-pins nginx |
-| Tasks views empty for a user | Human tasks are role-gated by name — the user's group must map to `MANAGER`/`ACCOUNTANT` (seeded for jane/john) |
+| Tasks views empty for a user | Human tasks are role-gated by name — the user's group must map to `MANAGER`/`ACCOUNTANT`, or to `CLAIMS_ADMIN` to administer (seeded for jane/john/sam) |
 | An AI chat "looks stuck" | `scripts/trace-agent.sh <conversationId>` (or a `CLM-` id) — a pending turn with a token is parked behind a gate/task/event, not lost |
 
 ## Housekeeping scripts

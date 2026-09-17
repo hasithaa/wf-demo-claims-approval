@@ -10,6 +10,9 @@ import ballerina/workflow;
 // The pre-approval rules the agent enforces (and its instructions explain).
 final decimal BILL_REQUIRED_OVER = 1000d;
 final decimal MANAGER_SIGNOFF_OVER = 3000d;
+// Administers every task the agent raises: sees it beside the audience, may reassign it, move its
+// deadline, or decide it (recorded as an administrator's decision). The claims workflow names the same role.
+const CLAIMS_ADMIN = "CLAIMS_ADMIN";
 
 // Who holds a role, for role-addressed notifications. The demo's directory is Thunder;
 // this map is the demo shortcut for "everyone in the accountants group".
@@ -209,13 +212,14 @@ Be brief and concrete in every message.`
         {activity: notifyRole, description: "Send a bell notification to everyone holding a role (e.g. ACCOUNTANT)."},
         {activity: estimatePayout, description: "Compute the payout for a claim amount."},
         // The gate: every call raises a PRE_RUN review decided by an ACCOUNTANT.
-        {activity: executePayment, requiresApproval: true, userRoles: "ACCOUNTANT",
+        {activity: executePayment, approvalPolicy: {userRoles: "ACCOUNTANT", administratorRoles: CLAIMS_ADMIN},
             description: "Release the payment. Gated: parks on an accountant's approval before it runs."}
     ],
     events: {chat: {request: string, response: string, cardinality: workflow:MULTI_EVENT}},
     humanTasks: {
         managerApproval: {
             userRoles: "MANAGER",
+            administratorRoles: CLAIMS_ADMIN,
             resultType: SignoffDecision,
             title: "Manager sign-off (Smart Claim)",
             description: "The Smart Claim agent asks for sign-off on a claim above the $3000 threshold."

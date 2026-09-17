@@ -32,7 +32,7 @@ Then open the admin console — note the **https**:
 | What | Where | Sign in |
 |---|---|---|
 | **Claimflow portal** (user portal) | http://localhost:9090 | `alice`/`alice12345` or `bob`/`bob12345` to submit; `jane`/`john` see a Decisions tab |
-| ICP console (admin portal) | https://localhost:9664 | **Sign in with SSO** as `jane`/`jane12345` (manager) or `john`/`john12345` (accountant); `admin`/`admin` stays local |
+| ICP console (admin portal) | https://localhost:9664 | **Sign in with SSO** as `jane`/`jane12345` (manager), `john`/`john12345` (accountant) or `sam`/`sam12345` (task administrator); `admin`/`admin` stays local |
 | Claims API / bill store / inbox | http://localhost:9080 · 9081 · 9082 | — |
 | Thunder console (identity admin) | https://localhost:8090/console | `admin` / `admin12345` |
 | Thunder (identity, later phases) | https://localhost:8090/console | `admin` / `admin12345` |
@@ -55,6 +55,7 @@ are gated on those role names.
 |---|---|---|---|
 | jane | jane12345 | `managers` → `MANAGER` | Decides claim reviews |
 | john | john12345 | `accountants` → `ACCOUNTANT` | Releases payments |
+| sam | sam12345 | `claims-admins` → `CLAIMS_ADMIN` | Administers every task: sees it, reassigns it, moves its deadline, or decides it as an administrator |
 | alice, bob | alice12345, bob12345 | `users` (portal only, later phase) | Submit claims |
 
 ## The demo, as intended

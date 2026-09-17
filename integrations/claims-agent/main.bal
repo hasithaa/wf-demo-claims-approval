@@ -514,7 +514,7 @@ service /agent on new http:Listener(8080) {
             management:ReviewActivityInfo|error info = management:getReviewActivityInfo(r.taskId);
             if info is management:ReviewActivityInfo {
                 // The native layer hands maps back as map<anydata>; coerce via JSON.
-                json coerced = (info.activityArgs).toJson();
+                json coerced = (info.taskInput).toJson();
                 if coerced is map<json> {
                     args = coerced;
                 }
