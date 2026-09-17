@@ -69,9 +69,9 @@ docker run --rm -v "$HERE":/work -w /work \
         awk -v dep="$DEP" -v dist="$DISTRIBUTION" "{ if (\$0 == \"@WORKFLOW_DEP@\") print dep; else { gsub(/@DISTRIBUTION@/, dist); print } }" \
             "integrations/${name}/Ballerina.toml.tmpl" > "integrations/${name}/Ballerina.toml"
         echo "-- bal build integrations/${name}"
-        # target/ caches dependency BIRs and Dependencies.toml locks the resolved versions;
-        # both would pin the previous mode, so start from nothing.
-        rm -rf "integrations/${name}/target" "integrations/${name}/Dependencies.toml"
+        # target/ caches dependency BIRs from the previous build; Dependencies.toml is committed so
+        # every build resolves the same versions, and bal build rewrites it when the module moves.
+        rm -rf "integrations/${name}/target"
         (cd "integrations/${name}" && bal build)
         mkdir -p "integrations/${name}/artifacts"
         cp "integrations/${name}"/target/bin/*.jar "integrations/${name}/artifacts/${name}.jar"

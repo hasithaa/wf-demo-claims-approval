@@ -107,22 +107,25 @@ chat, marks the claim `REJECTED`, and the same closing etiquette ends the conver
 Try it small, too: a fresh AI claim for `$800` skips the case and the sign-off — the
 agent validates, approves, notifies, and parks only on john's release.
 
-## Act 3 — the administrator (durable tasks, governed)
+## Act 3 — who sees a task (audience, exclusion, administrator)
 
-Every Claimflow task names `CLAIMS_ADMIN` as its administrator beside its audience. sam is
-neither a manager nor an accountant, yet the ICP shows him every pending task.
+Every Claimflow review names `MANAGER` as its audience, excludes the claim's own submitter,
+and names `CLAIMS_ADMIN` as its administrator. One claim shows all three rules; the portal's
+Approvals workspace and the ICP console apply the same module rule, so they always agree.
 
-1. alice submits a claim; jane is away. Sign into the ICP as **sam** → **Human Tasks** →
-   the review is listed, its detail says *Administrators: CLAIMS_ADMIN*, and the
-   **Administer** card is offered.
-2. **Change Deadline** → extend by 30 minutes: the task's own history records the act
-   under sam's name. Clearing it leaves the task open until someone decides.
-3. **Reassign** → users `john`: jane's role is refused from now on and john sees the review.
-   Reassign back to roles `MANAGER` to hand it home.
-4. Or decide it himself: **Complete Task** as sam — the decision is recorded with
-   *Completed As: administrator*, and the claim moves on exactly as if jane had signed.
-5. Sign in as **bob** (portal) → the task is not visible: he is neither audience nor
-   administrator, and the API refuses him even though he can see his own claim.
+1. **jane files her own claim** in the portal (she is a manager, but this one is hers).
+2. **jane** → Approvals: the review is *not* listed — the submitter is excluded even with
+   `MANAGER`. In the ICP as jane the task detail is refused: neither audience nor administrator.
+3. **alice** (a plain user) → the task is nowhere: she sees her own claims, never others' reviews.
+4. **sam** → ICP → **Human Tasks**: the review is listed with *Administrators: CLAIMS_ADMIN*,
+   *Excluded users: jane*, and the **Administer** card:
+   - **Change Deadline** → 0 days, 0 hours, 30 minutes: recorded in the task's history under sam.
+   - **Reassign** → users `john`: the `MANAGER` role is refused from now on and john sees it.
+     Reassign back to roles `MANAGER` to hand it home.
+   - **Complete Task** as sam: recorded with *Completed As: administrator*; the claim moves on
+     as if a manager had signed.
+5. Repeat with **alice's** claim to see the ordinary case: jane's Approvals lists it and she
+   decides it as the audience — *Completed As: audience*.
 
 ## The operations view (run alongside either act)
 

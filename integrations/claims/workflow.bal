@@ -74,6 +74,7 @@ function claimApproval(workflow:Context ctx, Claim claim,
         retryPolicy = {userRoles: "MANAGER", administratorRoles: CLAIMS_ADMIN,
             title: "Review the failed claim validation"});
 
+    // Nobody reviews their own claim: the submitter is excluded even when they hold MANAGER.
     ReviewDecision decision = check ctx->awaitHumanTask("reviewClaim",
         {
             "claimId": claim.id,
@@ -83,7 +84,8 @@ function claimApproval(workflow:Context ctx, Claim claim,
             "billUrl": claim?.billUrl,
             "validation": v.note
         },
-        userRoles = "MANAGER", administratorRoles = CLAIMS_ADMIN, title = "Review claim " + claim.id);
+        userRoles = "MANAGER", excludedUsers = claim.submittedBy, administratorRoles = CLAIMS_ADMIN,
+        title = "Review claim " + claim.id);
 
     if decision.outcome == "REQUEST_BILL" {
         string billRequestedState = check ctx->callActivity(recordClaimState,
@@ -104,7 +106,7 @@ function claimApproval(workflow:Context ctx, Claim claim,
                 "submittedBy": claim.submittedBy,
                 "bill": bill
             },
-            userRoles = "MANAGER", administratorRoles = CLAIMS_ADMIN,
+            userRoles = "MANAGER", excludedUsers = claim.submittedBy, administratorRoles = CLAIMS_ADMIN,
             title = "Review claim " + claim.id + " (bill attached)");
     }
 

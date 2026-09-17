@@ -126,9 +126,24 @@ type PortalTask record {|
     string status;
     string startTime;
     string[] userRoles;
+    string[] excludedUsers;
+    string[] administratorRoles;
+    // Whether this caller may decide it as its audience, or acts as its administrator.
+    boolean canComplete;
+    boolean canAdminister;
     string parentWorkflowId;
     map<json>? taskInput;
 |};
+
+// The module decides who sees a task: the audience minus its exclusions, plus its administrators.
+// The same rule the ICP console applies, so the portal and the console never disagree.
+isolated function visibleTasks(Caller caller) returns management:HumanTaskSummary[]|error {
+    json page = check management:executeCommand({operation: management:LIST_HUMAN_TASKS,
+            params: {status: "PENDING", 'limit: 200},
+            identity: {userId: caller.username, roles: caller.roles}});
+    json items = check page.items;
+    return check items.cloneWithType();
+}
 
 // The claims API: the bill inlet and the durable listing live here because events and
 // the claims table both belong to this integration. The user portal calls these.
@@ -188,23 +203,13 @@ service /claims on new http:Listener(8080) {
         if caller.roles.length() == 0 {
             return [];
         }
-        management:HumanTaskSummary[] all = check management:listAllHumanTasks(status = "PENDING");
+        management:HumanTaskSummary[] all = check visibleTasks(caller);
         PortalTask[] mine = [];
         foreach management:HumanTaskSummary t in all {
             // The listing spans the namespace, but completion is task-queue-scoped: only
             // this integration's own tasks belong here. The Smart Claim agent's tasks are
             // listed (and completed) by its own service.
             if !t.taskName.startsWith("claimApproval") {
-                continue;
-            }
-            boolean eligible = false;
-            foreach string r in t.userRoles {
-                if caller.roles.indexOf(r) is int {
-                    eligible = true;
-                    break;
-                }
-            }
-            if !eligible {
                 continue;
             }
             management:HumanTaskInfo|error info = management:getHumanTaskInfo(t.taskId);
@@ -223,6 +228,10 @@ service /claims on new http:Listener(8080) {
                 status: t.status,
                 startTime: t.startTime,
                 userRoles: t.userRoles,
+                excludedUsers: t.excludedUsers,
+                administratorRoles: t.administratorRoles,
+                canComplete: t.canComplete,
+                canAdminister: t.canAdminister,
                 parentWorkflowId: t.parentWorkflowId,
                 taskInput: taskInput
             });
