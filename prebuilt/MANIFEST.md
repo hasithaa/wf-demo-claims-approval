@@ -6,7 +6,7 @@ released yet. Two pieces therefore come from builds rather than releases:
 | Artifact | Where it comes from | Version |
 |---|---|---|
 | `ballerina/workflow` | `ballerina-workflow-java21-0.9.1.bala`, committed here; packed from [module-ballerina-workflow#131](https://github.com/ballerina-platform/module-ballerina-workflow/pull/131) (stacked on #128–#130) on Ballerina `2201.13.4` | `0.9.1` (PR #131 @ `861c80a`) |
-| ICP distribution | `wso2-integration-control-plane-2.1.0-taskmodel.2def73913.zip`, built from [integration-control-plane#888](https://github.com/wso2/integration-control-plane/pull/888) and published as release asset `icp-2.1.0-taskmodel.2def73913` of this repository; `build.sh` downloads it into this directory, checksum verified, not committed | `2.1.0-taskmodel.2def73913` |
+| ICP distribution | `wso2-integration-control-plane-2.1.0-taskmodel.2def73913.zip`, built from [integration-control-plane#888](https://github.com/wso2/integration-control-plane/pull/888) at `d765b1766` and published as release asset `icp-2.1.0-taskmodel.2def73913` of this repository; `build.sh` downloads it into this directory, checksum verified, not committed | `2.1.0-taskmodel.2def73913` |
 | `wso2/icp.runtime.bridge` | Ballerina Central | `1.0.0` |
 
 `bal push` of a bala extracts `platform/` and `compiler-plugin/` next to it; both are gitignored.
