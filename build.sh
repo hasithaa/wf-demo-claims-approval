@@ -34,7 +34,7 @@ BUILDER_IMAGE="claimflow/builder:local"
 DISTRIBUTION="$BAL_RELEASE"
 [ -f "$WORKFLOW_BALA" ] || { echo "missing ${WORKFLOW_BALA} (see prebuilt/MANIFEST.md)" >&2; exit 1; }
 
-ICP_VERSION="2.1.0-taskmodel.2def73913"
+ICP_VERSION="2.1.0-wfinput.4d5ae0478"
 ICP_DIST="wso2-integration-control-plane-${ICP_VERSION}"
 # Built from wso2/integration-control-plane PR #888 (the task-model console) and published as a
 # release asset of this repository; too large to commit.
