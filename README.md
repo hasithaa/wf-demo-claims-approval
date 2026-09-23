@@ -135,6 +135,12 @@ are correctly empty.
 `scripts/walkthrough.sh` drives all six steps from the command line — a smoke test and
 the demo's dry run.
 
+`scripts/seed-agent-data.sh` fills the demo with AI-filed claims: four real Smart Claim
+agent runs for bob, jane and john, each left in a different place — one waiting on a bill,
+one holding the accountant's payment gate, one paid all the way through. Pass a name
+(`jane`) or a story tag (`bob-parking`) to seed just that one. Each conversation stays
+live, so opening it in the portal and typing carries it on.
+
 ## What is running
 
 ```
