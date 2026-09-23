@@ -2,7 +2,7 @@
 # build.sh downloads the zip and stages it into ./artifacts.
 FROM eclipse-temurin:21-jre
 
-ARG ICP_DIST=wso2-integration-control-plane-2.1.0-wfinput.4d5ae0478
+ARG ICP_DIST=wso2-integration-control-plane-2.1.0-wfinput.ecc26c54f
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends unzip curl \
