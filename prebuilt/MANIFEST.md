@@ -1,30 +1,17 @@
-# Prebuilt binaries
+# Versions
 
-This branch (`v2`) runs the workflow 0.10 task model with task administrators, which is not
-released yet. Two pieces therefore come from builds rather than releases:
-
-The ICP build carries #888's task model (an ancestor of #916) plus the workflow-console fixes in
-[#916](https://github.com/wso2/integration-control-plane/pull/916): multiline input survives the
-review form, `Edit as JSON` is on every workflow input surface, the project listing says Workflow
-Definitions, and the instance diagram reports steps it could not place instead of drawing them as
-never executed. It also gives up on a tunnel read that no runtime answers at that read's own deadline
-rather than leaving the console on "Fetching…" until the five-minute sweep notices.
+This demo runs the WSO2 Integrator 1.0 RC1 line-up. Every piece is released, so nothing here is
+built from a branch.
 
 | Artifact | Where it comes from | Version |
 |---|---|---|
-| `ballerina/workflow` | `ballerina-workflow-java21-0.9.1.bala`, committed here; packed from [module-ballerina-workflow#131](https://github.com/ballerina-platform/module-ballerina-workflow/pull/131) (stacked on #128–#130) on Ballerina `2201.13.4` | `0.9.1` (PR #131 @ `861c80a`) |
-| ICP distribution | `wso2-integration-control-plane-2.1.0-wfinput.ecc26c54f.zip`, built from [integration-control-plane#916](https://github.com/wso2/integration-control-plane/pull/916) at `ecc26c54f`. **Not published yet**: no release asset carries it, so `build.sh` uses the copy already in this directory and would fail to fetch it on a fresh clone. Publish it as `icp-2.1.0-wfinput.ecc26c54f` when the demo needs to travel | `2.1.0-wfinput.ecc26c54f` |
-| `wso2/icp.runtime.bridge` | Ballerina Central | `1.0.0` |
+| Ballerina distribution | `ballerina/ballerina` Docker image (or a local `bal` via `BAL=`) | `2201.14.1` |
+| `ballerina/workflow` | Ballerina Central | `1.0.0` |
+| `wso2/icp.runtime.bridge` | Ballerina Central | `2.0.0` |
+| ICP distribution | [wso2/integration-control-plane v2.1.0](https://github.com/wso2/integration-control-plane/releases/tag/v2.1.0) release asset, checked against its `.sha256` | `2.1.0` |
 
-`bal push` of a bala extracts `platform/` and `compiler-plugin/` next to it; both are gitignored.
+`build.sh` downloads the ICP zip into this directory on first run (gitignored). To skip the
+download, drop `wso2-integration-control-plane-2.1.0.zip` and its `.sha256` here first.
 
-## Rebuilding them
-
-Module: in the PR's checkout, `./gradlew :workflow-ballerina:build`, then `cd ballerina && bal pack --offline`
-(the gradle build does not refresh the bala when only Java changed) and copy `target/bala/*.bala` here.
-
-ICP: `cd frontend && pnpm install && pnpm build`, then
-`docker run --rm -v $PWD:/work -w /work/icp_server ballerina/ballerina:2201.13.4 bal build`, then
-`./gradlew copyFrontendDist -x buildFrontend -Pproject.version=2.1.0-wfinput.ecc26c54f` and
-`./gradlew packageICP -x buildICP -x buildFrontend -x copyFrontendDist -Pproject.version=2.1.0-wfinput.ecc26c54f`;
-the zip lands in `build/distribution/`.
+The integrations build with `remoteManagement = true`: without it the bridge reports no
+artifacts and the console's workflow operations stay `PENDING`.

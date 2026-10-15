@@ -3,8 +3,9 @@
 An insurance-claims application built on the Ballerina workflow module and the WSO2
 Integration Control Plane (ICP): a claim is created first, the reviewing **manager**
 decides whether to approve, **request a bill**, or reject; an **accountant** releases the
-payment before it executes. Everything runs locally in Docker — including the unreleased
-ICP and workflow module, which ship prebuilt in [`prebuilt/`](prebuilt/MANIFEST.md).
+payment before it executes. Everything runs locally in Docker on the WSO2 Integrator 1.0 RC1
+line-up: Ballerina 2201.14.1, `ballerina/workflow` 1.0.0, `wso2/icp.runtime.bridge` 2.0.0 and
+ICP 2.1.0 — all released (see [`prebuilt/MANIFEST.md`](prebuilt/MANIFEST.md)).
 
 ## Run it
 
@@ -16,16 +17,15 @@ released ICP distribution, about 100 MB, and caches it in `prebuilt/`.
 docker compose up -d    # brings up the stack and seeds itself (~2 min to healthy)
 ```
 
-Everything the demo runs is released: the ICP distribution, and the `ballerina/workflow` and
-`wso2/icp.runtime.bridge` packages from Ballerina Central. The workflow module reports its own
-telemetry only from an unreleased build, so the console's Workflow metrics section needs one flag —
-and, because that build also needs an unreleased Ballerina distribution, a GitHub token that can
-read `ballerina-platform` packages:
+If pulling the `ballerina/ballerina:2201.14.1` builder image is slow, build with a local
+Ballerina 2201.14.1 instead (WSO2 Integrator ships one):
 
 ```sh
-export packageUser=<github-username> packagePAT=<token with read:packages>
-./build.sh --with-observability     # see prebuilt/MANIFEST.md
+BAL="/Applications/WSO2 Integrator.app/Contents/components/ballerina/bin/bal" ./build.sh
 ```
+
+Moving from an older version of this demo? The ICP schema changed: start clean with
+`docker compose down -v` before `docker compose up -d`.
 
 Then open the admin console — note the **https**:
 
@@ -219,12 +219,12 @@ the poll lands on. Killing one node mid-read is a demo in itself — the survivo
 ## Repository layout
 
 ```
-prebuilt/        the unreleased binaries this demo runs (see prebuilt/MANIFEST.md)
+prebuilt/        the cached ICP release zip and the versions this demo runs (see prebuilt/MANIFEST.md)
 build.sh         builds everything inside Docker; the only build command
 build_cluster.sh switches the ICP between one node and two (see above)
 docker-compose.yml
 docker-compose.cluster.yml   the second node + the balanced edge
-icp/             ICP runtime image (unpacks the prebuilt zip)
+icp/             ICP runtime image (unpacks the release zip)
 db/initdb/       Postgres first-boot scripts (apply the zip's own schema)
 edge/            the gateway config (nginx.conf single-node, nginx.cluster.conf balanced)
 fluent-bit/      the log pipeline (parsers, enrichment, the three OpenSearch index templates)

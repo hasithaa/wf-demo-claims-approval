@@ -7,4 +7,6 @@ distribution = "@DISTRIBUTION@"
 # No dependency blocks: the ICP runtime bridge resolves from Ballerina Central, and this
 # integration runs no workflows.
 [build-options]
+# The ICP bridge reports artifacts and serves tunneled workflow commands only with remote management on.
+remoteManagement = true
 observabilityIncluded = true

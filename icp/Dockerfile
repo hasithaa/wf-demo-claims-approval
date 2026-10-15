@@ -1,8 +1,8 @@
 # The released ICP distribution, unpacked and run in the foreground.
 # build.sh downloads the zip and stages it into ./artifacts.
-FROM eclipse-temurin:21-jre
+FROM eclipse-temurin:25-jre
 
-ARG ICP_DIST=wso2-integration-control-plane-2.1.0-wfinput.ecc26c54f
+ARG ICP_DIST=wso2-integration-control-plane-2.1.0
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends unzip curl \

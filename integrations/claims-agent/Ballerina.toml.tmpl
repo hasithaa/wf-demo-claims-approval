@@ -4,8 +4,10 @@ name = "claims_agent"
 version = "0.1.0"
 distribution = "@DISTRIBUTION@"
 
-# The workflow module: the prebuilt 0.10 task-model build, pushed to the builder's local repository.
+# The workflow module, pinned to the release from Ballerina Central.
 @WORKFLOW_DEP@
 
 [build-options]
+# The ICP bridge reports artifacts and serves tunneled workflow commands only with remote management on.
+remoteManagement = true
 observabilityIncluded = true

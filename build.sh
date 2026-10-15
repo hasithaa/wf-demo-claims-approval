@@ -2,13 +2,14 @@
 # Builds everything this demo runs, using nothing from the host but Docker.
 #
 #   ./build.sh          # then: docker compose up -d
+#   BAL=/path/to/bal ./build.sh   # build with a local Ballerina 2201.14.1 instead of Docker
 #
 # What it does:
 #   1. Builds a Ballerina builder image (the toolchain lives in Docker, not on your machine).
-#   2. Inside it: builds each integration against the prebuilt workflow module (the 0.10 task
-#      model with task administrators, unreleased) and the released ICP runtime bridge.
-#   3. Fetches the ICP distribution built from the matching console branch (cached in
-#      prebuilt/) and stages the integration jars plus the ICP's database init scripts.
+#   2. Inside it: builds each integration against the released workflow module and ICP runtime
+#      bridge from Ballerina Central.
+#   3. Fetches the released ICP distribution (cached in prebuilt/) and stages the integration
+#      jars plus the ICP's database init scripts.
 #
 # docker compose then builds the runtime images from the staged artifacts.
 set -euo pipefail
@@ -20,63 +21,59 @@ command -v docker >/dev/null 2>&1 || { echo "docker is required (and is the only
 
 for arg in "$@"; do
     case "$arg" in
-        -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,13p' "$0"; exit 0 ;;
         *) echo "unknown argument: $arg (try --help)" >&2; exit 2 ;;
     esac
 done
 
-# The workflow module carrying task administrators: module-ballerina-workflow PR #131, packed
-# on the released distribution, so nothing prerelease is needed to compile against it.
-WORKFLOW_VERSION="0.9.1"
-WORKFLOW_BALA="prebuilt/ballerina-workflow-java21-${WORKFLOW_VERSION}.bala"
-BAL_RELEASE="2201.13.4"
-BUILDER_IMAGE="claimflow/builder:local"
+# Everything is released: ballerina/workflow and wso2/icp.runtime.bridge come from Ballerina Central.
+WORKFLOW_VERSION="1.0.0"
+BAL_RELEASE="2201.14.1"
+BUILDER_IMAGE="claimflow/builder:${BAL_RELEASE}"
 DISTRIBUTION="$BAL_RELEASE"
-[ -f "$WORKFLOW_BALA" ] || { echo "missing ${WORKFLOW_BALA} (see prebuilt/MANIFEST.md)" >&2; exit 1; }
 
-ICP_VERSION="2.1.0-wfinput.ecc26c54f"
+ICP_VERSION="2.1.0"
 ICP_DIST="wso2-integration-control-plane-${ICP_VERSION}"
-# Built from wso2/integration-control-plane PR #888 (the task-model console) and published as a
-# release asset of this repository; too large to commit.
-ICP_URL="https://github.com/hasithaa/wf-demo-claims-approval/releases/download/icp-${ICP_VERSION}/${ICP_DIST}.zip"
+ICP_URL="https://github.com/wso2/integration-control-plane/releases/download/v${ICP_VERSION}/${ICP_DIST}.zip"
 INTEGRATIONS=(claims bill-store notifications claims-agent)
 
 log() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 
-log "Building the Ballerina builder image"
-docker build -q -f docker/builder.Dockerfile -t "$BUILDER_IMAGE" docker >/dev/null
-echo "$BUILDER_IMAGE"
-
-log "Building the integrations (workflow module ${WORKFLOW_VERSION} from prebuilt/, bridge from Ballerina Central)"
-# One container run renders each Ballerina.toml and builds the integration. The repo is
-# mounted read-write so bal build writes target/ and we can stage the jars. The Ballerina
-# home lives on a named volume so Central packages are pulled once, not per run, and the
-# compiler JVM is bounded so three consecutive builds fit in Docker memory.
-docker run --rm -v "$HERE":/work -w /work \
-    -v claimflow-bal-cache:/root/.ballerina \
-    -e JAVA_OPTS=-Xmx2g \
-    -e WORKFLOW_BALA="$WORKFLOW_BALA" -e WORKFLOW_VERSION="$WORKFLOW_VERSION" \
-    -e DISTRIBUTION="$DISTRIBUTION" \
-    "$BUILDER_IMAGE" bash -ec '
-    # Re-pushing an existing version is refused, and the compiled cache is keyed by version
-    # alone, so a rebuilt bala would be shadowed by the earlier BIR: clear both first.
-    rm -rf /root/.ballerina/repositories/local/bala/ballerina/workflow \
-           /root/.ballerina/repositories/local/cache-*/ballerina/workflow \
-           /root/.ballerina/repositories/central.ballerina.io/cache-*/ballerina/workflow
-    bal push --repository=local "$WORKFLOW_BALA"
-    DEP=$(printf "%s\n" "[[dependency]]" "org = \"ballerina\"" "name = \"workflow\"" "version = \"$WORKFLOW_VERSION\"" "repository = \"local\"")
+# Renders each Ballerina.toml and builds the integration; staged jars land in integrations/*/artifacts.
+BUILD_ALL='
+    export DEP=$(printf "%s\n" "[[dependency]]" "org = \"ballerina\"" "name = \"workflow\"" "version = \"$WORKFLOW_VERSION\"")
     for name in '"${INTEGRATIONS[*]}"'; do
-        awk -v dep="$DEP" -v dist="$DISTRIBUTION" "{ if (\$0 == \"@WORKFLOW_DEP@\") print dep; else { gsub(/@DISTRIBUTION@/, dist); print } }" \
+        awk -v dist="$DISTRIBUTION" "{ if (\$0 == \"@WORKFLOW_DEP@\") print ENVIRON[\"DEP\"]; else { gsub(/@DISTRIBUTION@/, dist); print } }" \
             "integrations/${name}/Ballerina.toml.tmpl" > "integrations/${name}/Ballerina.toml"
         echo "-- bal build integrations/${name}"
         # target/ caches dependency BIRs from the previous build; Dependencies.toml is committed so
         # every build resolves the same versions, and bal build rewrites it when the module moves.
         rm -rf "integrations/${name}/target"
-        (cd "integrations/${name}" && bal build)
+        (cd "integrations/${name}" && "$BAL" build)
         mkdir -p "integrations/${name}/artifacts"
         cp "integrations/${name}"/target/bin/*.jar "integrations/${name}/artifacts/${name}.jar"
     done
 '
+
+log "Building the integrations (workflow ${WORKFLOW_VERSION} and the ICP bridge from Ballerina Central)"
+if [ -n "${BAL:-}" ]; then
+    # BAL=/path/to/bal ./build.sh skips the Docker toolchain (use when image pulls are slow).
+    "$BAL" version | head -1 | grep -q "$BAL_RELEASE" || { echo "BAL must be Ballerina ${BAL_RELEASE}" >&2; exit 1; }
+    WORKFLOW_VERSION="$WORKFLOW_VERSION" DISTRIBUTION="$DISTRIBUTION" BAL="$BAL" bash -ec "$BUILD_ALL"
+else
+    log "Building the Ballerina builder image"
+    docker build -q --build-arg BAL_RELEASE="$BAL_RELEASE" -f docker/builder.Dockerfile -t "$BUILDER_IMAGE" docker >/dev/null
+    echo "$BUILDER_IMAGE"
+    # The repo is mounted read-write so bal build writes target/ and we can stage the jars. The
+    # Ballerina home lives on a named volume so Central packages are pulled once, not per run, and
+    # the compiler JVM is bounded so consecutive builds fit in Docker memory.
+    docker run --rm -v "$HERE":/work -w /work \
+        -v claimflow-bal-cache:/root/.ballerina \
+        -e JAVA_OPTS=-Xmx2g -e BAL=bal \
+        -e WORKFLOW_VERSION="$WORKFLOW_VERSION" \
+        -e DISTRIBUTION="$DISTRIBUTION" \
+        "$BUILDER_IMAGE" bash -ec "$BUILD_ALL"
+fi
 
 log "Fetching the ICP distribution"
 mkdir -p prebuilt
